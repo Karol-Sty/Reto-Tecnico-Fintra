@@ -24,10 +24,19 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Preparar build
+      - name: Preparar build con la key inyectada
         run: |
           mkdir -p build
           cp index.html build/index.html
+          sed -i "s|__GROQ_KEY__|${{ secrets.GROQ_API_KEY }}|g" build/index.html
+          if grep -q "__GROQ_KEY__" build/index.html; then
+            echo "::error::El placeholder __GROQ_KEY__ sigue en el archivo — el secret GROQ_API_KEY no está configurado."
+            exit 1
+          fi
+          if [ -z "${{ secrets.GROQ_API_KEY }}" ]; then
+            echo "::error::El secret GROQ_API_KEY está vacío o no existe en este repositorio."
+            exit 1
+          fi
 
       - name: Configurar Pages
         uses: actions/configure-pages@v5

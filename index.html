@@ -81,6 +81,9 @@
   .badge.degradante{background:var(--degradante);}
   .badge.deseable{background:var(--deseable);}
   .badge.error{background:#8a3b3b;}
+  .badge.conf-alta{background:#3c6e4a;}
+  .badge.conf-media{background:#8a7a2f;}
+  .badge.conf-baja{background:#8a3b3b;}
 
   h2{font-size:1.1rem; margin: 0 0 10px; border-bottom:1px solid var(--line); padding-bottom:8px;}
   .field{margin-bottom:10px; font-size:0.97rem; line-height:1.5;}
@@ -222,6 +225,11 @@ SEVERIDAD (elige una):
 
 ÁREA FUNCIONAL (elige la que mejor aplique): "Emisión de factura", "Reportes", "Captura de gastos / OCR", "Apertura de la app", "Cotizaciones", "Gestión de clientes", "Acceso / Perfil", "Otra".
 
+CONFIANZA (elige una, con honestidad — no siempre es "Alta"):
+- "Alta": el texto es claro, describe un solo problema y no deja dudas razonables sobre severidad o área.
+- "Media": el texto es entendible pero le falta contexto (ej. no dice plataforma, o podría encajar en más de un área).
+- "Baja": el texto es ambiguo, muy corto, mezcla varios problemas distintos, usa sarcasmo/lenguaje coloquial difícil de interpretar, o tú mismo dudarías entre dos clasificaciones distintas. Usa esto sin miedo: es más útil señalar la duda que ocultarla.
+
 Si detectas país en el texto, inclúyelo. Si no es explícito, usa "No especificado" salvo que el usuario te lo indique aparte.
 
 Si la severidad es "Bloqueante", genera ADEMÁS un bug report completo con este formato (igual al que usaría un PM real):
@@ -245,6 +253,8 @@ Responde SOLO con un objeto JSON válido, sin texto adicional, sin backticks, co
   "area_funcional": "...",
   "pais": "...",
   "razon_clasificacion": "...",
+  "confianza": "Alta" | "Media" | "Baja",
+  "razon_confianza": "una frase breve explicando por qué (obligatoria si confianza no es Alta, opcional si es Alta)",
   "bug_report": null o {
     "titulo": "...", "entorno": "...", "pasos_reproducir": ["..."],
     "resultado_esperado": "...", "resultado_actual": "...",
@@ -268,6 +278,14 @@ function sevClass(sev){
   if (s.includes("degra")) return "degradante";
   if (s.includes("dese")) return "deseable";
   return "error";
+}
+
+function confClass(conf){
+  const c = (conf || "").toLowerCase();
+  if (c.includes("alta")) return "conf-alta";
+  if (c.includes("media")) return "conf-media";
+  if (c.includes("baja")) return "conf-baja";
+  return "";
 }
 
 // Intenta parsear JSON del modelo con dos niveles de tolerancia:
@@ -459,15 +477,18 @@ async function copiarTexto(texto, btnEl){
 
 function render(p, container){
   const sc = sevClass(p.severidad);
+  const cc = confClass(p.confianza);
 
   let html = `
     <h2>Clasificación</h2>
     <div class="field">
       <span class="badge ${sc}">${esc(p.severidad)}</span>
       <span class="badge deseable" style="background:#556;">${esc(p.area_funcional)}</span>
+      ${p.confianza ? `<span class="badge ${cc}">Confianza: ${esc(p.confianza)}</span>` : ''}
     </div>
     <div class="field"><b>País:</b> ${esc(p.pais || "No especificado")}</div>
     <div class="field"><b>Por qué:</b> ${esc(p.razon_clasificacion)}</div>
+    ${p.razon_confianza ? `<div class="field"><b>Sobre la confianza:</b> ${esc(p.razon_confianza)}</div>` : ''}
   `;
 
   if (p.bug_report){
@@ -497,8 +518,70 @@ function render(p, container){
     `;
   }
 
+  html += `<div style="margin-top:26px;">
+    <button class="ghost" onclick="exportarUno('xlsx')">Exportar Excel</button>
+    <button class="ghost" onclick="exportarUno('csv')">Exportar CSV</button>
+  </div>`;
+
   container.innerHTML = html;
   container.style.display = "block";
+  container.dataset.ultimoResultado = JSON.stringify(p);
+}
+
+function filaDesdeResultado(r){
+  // Aplana un resultado (con o sin bug_report/relacion_embudo) a una fila plana,
+  // usable tanto para un solo comentario como para cada fila de un lote.
+  const p = r.ok === false ? null : (r.data || r);
+  if (!p){
+    return {
+      "ID": r.id || "", "País": r.pais || "", "Comentario": r.comentario || "",
+      "Severidad": "", "Área funcional": "", "Confianza": "", "Razón clasificación": "",
+      "Razón confianza": "", "Tiene bug report": "", "Bug: título": "", "Bug: entorno": "",
+      "Bug: pasos": "", "Bug: resultado esperado": "", "Bug: resultado actual": "",
+      "Bug: severidad": "", "Bug: razón severidad": "", "Bug: preguntas a soporte": "",
+      "Relación con embudo": "", "Error": r.error || ""
+    };
+  }
+  const b = p.bug_report;
+  return {
+    "ID": r.id || "", "País": p.pais || "", "Comentario": r.comentario || "",
+    "Severidad": p.severidad || "", "Área funcional": p.area_funcional || "",
+    "Confianza": p.confianza || "", "Razón clasificación": p.razon_clasificacion || "",
+    "Razón confianza": p.razon_confianza || "",
+    "Tiene bug report": b ? "Sí" : "No",
+    "Bug: título": b?.titulo || "", "Bug: entorno": b?.entorno || "",
+    "Bug: pasos": (b?.pasos_reproducir || []).join(" | "),
+    "Bug: resultado esperado": b?.resultado_esperado || "", "Bug: resultado actual": b?.resultado_actual || "",
+    "Bug: severidad": b?.severidad_bug || "", "Bug: razón severidad": b?.razon_severidad || "",
+    "Bug: preguntas a soporte": (b?.preguntas_soporte || []).join(" | "),
+    "Relación con embudo": (p.relacion_embudo && p.relacion_embudo.aplica) ? (p.relacion_embudo.nota || "Sí") : "",
+    "Error": ""
+  };
+}
+
+function descargarFilas(filas, nombreBase, formato){
+  const ws = XLSX.utils.json_to_sheet(filas);
+  if (formato === 'csv'){
+    const csv = XLSX.utils.sheet_to_csv(ws);
+    const blob = new Blob(["\uFEFF" + csv], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url; a.download = nombreBase + '.csv';
+    a.click();
+    URL.revokeObjectURL(url);
+  } else {
+    ws['!cols'] = Object.keys(filas[0] || {}).map(() => ({ wch: 22 }));
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, "Resultados");
+    XLSX.writeFile(wb, nombreBase + '.xlsx');
+  }
+}
+
+function exportarUno(formato){
+  const result = document.getElementById('result');
+  const p = JSON.parse(result.dataset.ultimoResultado || "{}");
+  const fila = filaDesdeResultado({ ok: true, data: p, id: "1", pais: p.pais, comentario: document.getElementById('input').value.trim() });
+  descargarFilas([fila], 'fintra_resultado', formato);
 }
 
 // ---------- modo: lote (Excel) ----------
@@ -671,6 +754,17 @@ function renderLote(resultados, container){
       `<br><button class="ghost" onclick="reintentarFallidos()">Reintentar solo los fallidos</button></div>`;
   }
 
+  const bajaConfianza = resultados.filter(r => r.ok && (r.data.confianza || "").toLowerCase().includes("baja"));
+  if (bajaConfianza.length){
+    html += `<div class="flag" style="margin-bottom:22px;"><b>${bajaConfianza.length} comentario(s) con confianza baja — el modelo mismo señala que dudaría en la clasificación, vale la pena revisarlos a mano:</b><br>` +
+      bajaConfianza.map(r => `#${esc(r.id)} — ${esc(r.data.razon_confianza || "sin razón detallada")}`).join("<br>") + `</div>`;
+  }
+
+  html += `<div style="margin-bottom:6px;">
+    <button class="ghost" onclick="exportarLote('xlsx')">Exportar resultados (Excel)</button>
+    <button class="ghost" onclick="exportarLote('csv')">Exportar resultados (CSV)</button>
+  </div>`;
+
   html += `<h2>Detalle por comentario</h2>`;
   resultados.forEach(r => {
     if (!r.ok){
@@ -681,13 +775,16 @@ function renderLote(resultados, container){
     }
     const p = r.data;
     const sc = sevClass(p.severidad);
+    const cc = confClass(p.confianza);
     let inner = `
       <div class="field">
         <span class="badge ${sc}">${esc(p.severidad)}</span>
         <span class="badge deseable" style="background:#556;">${esc(p.area_funcional)}</span>
+        ${p.confianza ? `<span class="badge ${cc}">Confianza: ${esc(p.confianza)}</span>` : ''}
       </div>
       <div class="field"><b>País:</b> ${esc(p.pais || "No especificado")}</div>
       <div class="field"><b>Por qué:</b> ${esc(p.razon_clasificacion)}</div>
+      ${p.razon_confianza ? `<div class="field"><b>Sobre la confianza:</b> ${esc(p.razon_confianza)}</div>` : ''}
     `;
     if (p.bug_report){
       const b = p.bug_report;
@@ -726,6 +823,12 @@ function descargarPlantilla(){
   const wb = XLSX.utils.book_new();
   XLSX.utils.book_append_sheet(wb, ws, "Comentarios");
   XLSX.writeFile(wb, "plantilla_fintra_lote.xlsx");
+}
+
+function exportarLote(formato){
+  if (!loteResultados.length) return;
+  const filas = loteResultados.map(filaDesdeResultado);
+  descargarFilas(filas, 'fintra_lote_resultados', formato);
 }
 </script>
 </body>

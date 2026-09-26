@@ -3,142 +3,181 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Buzón de Fintra — Triage automático</title>
+<title>Fintra — Buzón de soporte</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=IBM+Plex+Mono:wght@500&display=swap" rel="stylesheet">
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/exceljs/4.4.0/exceljs.min.js"></script>
 <style>
   :root{
-    --ink:#1c2530;
-    --paper:#f6f4ef;
+    --bg:#eef6f7;
+    --bg-grad:#e3f1f0;
     --card:#ffffff;
-    --line:#dcd6c8;
-    --accent:#2f6f5e;
-    --accent-ink:#0f2e26;
-    --bloqueante:#b3441e;
-    --degradante:#a3791f;
-    --deseable:#3c6e8f;
-    --muted:#6b6458;
-    font-family: 'Iowan Old Style', 'Palatino Linotype', Georgia, serif;
+    --border:#d9e9e7;
+    --border-soft:#e7f2f1;
+    --ink:#122624;
+    --muted:#5c7876;
+    --brand:#0e8a7d;
+    --brand-dark:#0a6d63;
+    --brand-soft:#e0f3f0;
+    --brand-mid:#7fc4bb;
+    --bloqueante:#b23b2e; --bloqueante-soft:#faece9;
+    --degradante:#a06a12; --degradante-soft:#faf1de;
+    --deseable:#1c7a4b; --deseable-soft:#e6f5eb;
+    --radius-sm:8px; --radius-md:12px; --radius-lg:18px;
+    font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
   }
   *{box-sizing:border-box;}
   body{
-    margin:0; background:var(--paper); color:var(--ink);
-    padding: 40px 20px 80px;
+    margin:0; color:var(--ink);
+    background:
+      radial-gradient(1100px 420px at 12% -8%, var(--bg-grad), transparent 60%),
+      var(--bg);
+    padding: 48px 20px 90px;
   }
-  .wrap{max-width:820px; margin:0 auto;}
-  header{margin-bottom:32px;}
-  .eyebrow{font-family: 'Courier New', monospace; font-size:13px; color:var(--muted); letter-spacing:0.02em;}
-  h1{
-    font-size:2.2rem; margin: 6px 0 8px; font-weight:600; line-height:1.15;
-  }
-  .sub{color:var(--muted); font-size:1.05rem; max-width:60ch; line-height:1.5;}
+  .wrap{max-width:860px; margin:0 auto;}
 
-  .tabs{display:flex; gap:8px; margin-bottom:16px; flex-wrap:wrap;}
-  .tab{
-    font-family:'Courier New', monospace; font-size:0.85rem; padding:8px 14px;
-    background:var(--card); border:1px solid var(--line); border-radius:999px;
-    cursor:pointer; color:var(--muted);
+  .brand{display:flex; align-items:center; gap:16px; margin-bottom:20px;}
+  .logo{
+    width:48px; height:48px; border-radius:var(--radius-md); flex-shrink:0;
+    background:linear-gradient(155deg,#1ba394,#0a6d63);
+    color:#fff; display:flex; align-items:center; justify-content:center;
+    box-shadow:0 10px 20px -6px rgba(10,109,99,.45);
   }
-  .tab.active{background:var(--accent); color:#fff; border-color:var(--accent);}
+  .logo svg{width:24px; height:24px;}
+  .eyebrow{font-size:13.5px; font-weight:600; color:var(--brand-dark);}
+  .eyebrow .dot{color:var(--brand-mid); margin:0 5px;}
+  h1{font-size:1.95rem; margin:3px 0 0; font-weight:800; line-height:1.2; letter-spacing:-0.015em;}
+  .sub{color:var(--muted); font-size:1rem; max-width:62ch; line-height:1.6; margin:14px 0 28px;}
+
+  .tabs{display:flex; gap:6px; margin-bottom:18px; flex-wrap:wrap; background:var(--border-soft); padding:5px; border-radius:999px; width:fit-content;}
+  .tab{
+    font-size:0.86rem; font-weight:600; padding:9px 20px;
+    background:transparent; border:1px solid transparent; border-radius:999px;
+    cursor:pointer; color:var(--muted); transition:all .15s ease;
+  }
+  .tab:hover{color:var(--brand-dark);}
+  .tab.active{background:var(--card); color:var(--brand-dark); box-shadow:0 3px 10px rgba(10,109,99,.12);}
   .mode{display:none;}
   .mode.active{display:block;}
 
   .panel{
-    background:var(--card); border:1px solid var(--line); border-radius:4px;
-    padding:24px; margin-bottom:20px;
+    background:var(--card); border:1px solid var(--border); border-radius:var(--radius-lg);
+    padding:28px; margin-bottom:20px;
+    box-shadow:0 1px 2px rgba(18,38,36,.03), 0 14px 28px -12px rgba(18,38,36,.08);
   }
-  label{display:block; font-size:0.9rem; color:var(--muted); margin-bottom:6px;}
+  label{display:block; font-size:0.86rem; font-weight:600; color:var(--muted); margin-bottom:7px;}
   textarea, input[type=text], input[type=password], input[type=file], select{
-    width:100%; font-family: inherit; font-size:1rem; padding:10px 12px;
-    border:1px solid var(--line); border-radius:3px; background:#fffdf9;
-    color:var(--ink);
+    width:100%; font-family: inherit; font-size:0.97rem; padding:12px 14px;
+    border:1.5px solid var(--border); border-radius:var(--radius-sm); background:#fbfdfd;
+    color:var(--ink); transition:border-color .15s ease, box-shadow .15s ease;
   }
-  textarea{min-height:110px; resize:vertical;}
-  textarea:disabled, input:disabled, select:disabled{opacity:0.6;}
+  textarea:focus, select:focus, input:focus{outline:none; border-color:var(--brand); background:#fff; box-shadow:0 0 0 3px var(--brand-soft);}
+  textarea{min-height:110px; resize:vertical; line-height:1.55;}
+  textarea:disabled, input:disabled, select:disabled{opacity:0.55;}
   .row{display:flex; gap:16px; flex-wrap:wrap; margin-top:14px;}
   .row > div{flex:1; min-width:160px;}
 
   button{
-    font-family: inherit; font-size:1rem; padding:11px 20px;
-    background:var(--accent); color:#fff; border:none; border-radius:3px;
-    cursor:pointer; margin-top:16px;
+    font-family: inherit; font-size:0.94rem; font-weight:600; padding:11px 22px;
+    background:var(--brand); color:#fff; border:none; border-radius:var(--radius-sm);
+    cursor:pointer; margin-top:16px; transition:all .15s ease;
+    box-shadow:0 6px 16px -6px rgba(10,109,99,.5);
   }
-  button:hover{background:var(--accent-ink);}
-  button:disabled{background:#a9a49a; cursor:default;}
+  button:hover{background:var(--brand-dark); transform:translateY(-1px);}
+  button:focus-visible{outline:2px solid var(--brand-dark); outline-offset:2px;}
+  button:disabled{background:#c9d6d4; cursor:default; box-shadow:none; transform:none;}
   button.ghost{
-    background:transparent; color:var(--accent-ink); border:1px solid var(--line);
-    padding:6px 12px; font-size:0.85rem; margin-top:10px;
+    background:#fff; color:var(--brand-dark); border:1.5px solid var(--border);
+    padding:7px 14px; font-size:0.83rem; margin-top:10px; box-shadow:none;
   }
-  button.ghost:hover{background:#efeae0;}
+  button.ghost:hover{background:var(--brand-soft); border-color:var(--brand-mid); transform:none;}
 
-  #status, #statusLote{font-size:0.9rem; color:var(--muted); margin-top:10px; min-height:1.2em;}
+  #status, #statusLote{font-size:0.88rem; color:var(--muted); margin-top:10px; min-height:1.2em;}
 
   .result{display:none;}
   .badge{
-    display:inline-block; padding:3px 10px; border-radius:999px; color:#fff;
-    font-size:0.8rem; font-family:'Courier New', monospace; margin-right:8px;
+    display:inline-flex; align-items:center; padding:4px 12px; border-radius:999px;
+    font-size:0.76rem; font-weight:700; margin-right:8px; margin-bottom:4px; letter-spacing:0.01em;
   }
-  .badge.bloqueante{background:var(--bloqueante);}
-  .badge.degradante{background:var(--degradante);}
-  .badge.deseable{background:var(--deseable);}
-  .badge.error{background:#8a3b3b;}
-  .badge.conf-alta{background:#3c6e4a;}
-  .badge.conf-media{background:#8a7a2f;}
-  .badge.conf-baja{background:#8a3b3b;}
+  .badge.bloqueante{background:var(--bloqueante-soft); color:var(--bloqueante);}
+  .badge.degradante{background:var(--degradante-soft); color:var(--degradante);}
+  .badge.deseable{background:var(--deseable-soft); color:var(--deseable);}
+  .badge.error{background:var(--bloqueante-soft); color:var(--bloqueante);}
+  .badge.conf-alta{background:var(--deseable-soft); color:var(--deseable);}
+  .badge.conf-media{background:var(--degradante-soft); color:var(--degradante);}
+  .badge.conf-baja{background:var(--bloqueante-soft); color:var(--bloqueante);}
+  .badge.area{background:var(--brand-soft); color:var(--brand-dark);}
 
-  h2{font-size:1.1rem; margin: 0 0 10px; border-bottom:1px solid var(--line); padding-bottom:8px;}
-  .field{margin-bottom:10px; font-size:0.97rem; line-height:1.5;}
+  h2{font-size:1.02rem; margin: 0 0 12px; font-weight:700; color:var(--ink);}
+  .field{margin-bottom:10px; font-size:0.95rem; line-height:1.55;}
   .field b{color:var(--ink);}
-  table.report{width:100%; border-collapse:collapse; font-size:0.95rem;}
-  table.report td{padding:8px 10px; border-top:1px solid var(--line); vertical-align:top;}
-  table.report td:first-child{width:32%; color:var(--muted);}
+  table.report{width:100%; border-collapse:collapse; font-size:0.93rem;}
+  table.report td{padding:10px 12px; border-top:1px solid var(--border); vertical-align:top;}
+  table.report td:first-child{width:30%; color:var(--muted); font-weight:600;}
   ol.questions{margin:0; padding-left:20px;}
   ol.questions li{margin-bottom:6px;}
 
   .flag{
-    background:#fbf3e3; border:1px solid #e4cf9c; border-radius:3px;
-    padding:12px 14px; font-size:0.92rem; margin-top:6px; line-height:1.5;
+    background:var(--degradante-soft); border:1px solid #ecd8a0; border-radius:var(--radius-sm);
+    padding:14px 16px; font-size:0.9rem; margin-top:6px; line-height:1.55; color:#6b4d0c;
   }
   .note{
-    font-size:0.85rem; color:var(--muted); margin-top:22px; line-height:1.6;
+    font-size:0.83rem; color:var(--muted); margin-top:28px; line-height:1.65;
+    padding-top:18px; border-top:1px solid var(--border-soft);
   }
-  .error{color:var(--bloqueante); font-size:0.9rem; margin-top:10px;}
+  .error{color:var(--bloqueante); font-size:0.88rem; margin-top:10px;}
 
   /* Lote */
-  .filerow{display:flex; gap:12px; align-items:center; flex-wrap:wrap; margin-top:6px;}
+  .filerow{display:flex; gap:12px; align-items:center; flex-wrap:wrap; margin-top:8px;}
   .filerow button{margin-top:0;}
-  .preview{font-size:0.85rem; color:var(--muted); margin-top:10px;}
+  .preview{font-size:0.84rem; color:var(--muted); margin-top:10px; line-height:1.5;}
   .progressbar{
-    height:6px; background:var(--line); border-radius:3px; overflow:hidden; margin-top:14px;
+    height:6px; background:var(--border); border-radius:3px; overflow:hidden; margin-top:14px;
   }
-  .progressbar > div{height:100%; background:var(--accent); width:0%; transition:width 0.2s;}
+  .progressbar > div{height:100%; background:var(--brand); width:0%; transition:width 0.2s;}
 
-  table.agg{width:100%; border-collapse:collapse; font-size:0.92rem; margin-bottom:22px;}
-  table.agg th, table.agg td{border:1px solid var(--line); padding:8px 10px; text-align:left; vertical-align:top;}
-  table.agg th{background:#efeae0; font-weight:600;}
+  table.agg{width:100%; border-collapse:separate; border-spacing:0; font-size:0.9rem; margin-bottom:22px; border:1px solid var(--border); border-radius:var(--radius-md); overflow:hidden;}
+  table.agg th, table.agg td{padding:11px 14px; text-align:left; vertical-align:top; border-bottom:1px solid var(--border);}
+  table.agg th{background:var(--border-soft); font-weight:700; color:var(--brand-dark); font-size:0.78rem;}
+  table.agg tr:last-child td{border-bottom:none;}
   tr.sev-bloqueante td:first-child{border-left:4px solid var(--bloqueante);}
   tr.sev-degradante td:first-child{border-left:4px solid var(--degradante);}
   tr.sev-deseable td:first-child{border-left:4px solid var(--deseable);}
 
-  .item{border:1px solid var(--line); border-radius:3px; padding:16px; margin-bottom:14px; background:#fffdf9;}
-  .item summary{cursor:pointer; font-size:0.95rem; list-style:none;}
+  .item{border:1px solid var(--border); border-radius:var(--radius-md); padding:18px; margin-bottom:12px; background:#fcfefe; transition:border-color .15s ease;}
+  .item[open]{border-color:var(--brand-mid);}
+  .item summary{cursor:pointer; font-size:0.93rem; list-style:none; font-weight:600;}
   .item summary::-webkit-details-marker{display:none;}
-  .item summary .txt{color:var(--muted); font-size:0.88rem; margin-top:4px;}
-  .item[open] summary{margin-bottom:12px;}
+  .item summary .txt{color:var(--muted); font-size:0.87rem; margin-top:5px; font-weight:400;}
+  .item[open] summary{margin-bottom:14px;}
 
   .stats{
-    font-family:'Courier New', monospace; font-size:0.8rem; color:var(--muted);
-    border-top:1px dashed var(--line); margin-top:36px; padding-top:14px; line-height:1.7;
+    font-size:0.82rem; color:var(--muted); border-top:1px solid var(--border);
+    margin-top:38px; padding-top:16px; line-height:1.7;
   }
-  .stats button.ghost{padding:4px 10px; font-size:0.78rem;}
+  .stats button.ghost{padding:4px 12px; font-size:0.76rem;}
 </style>
 </head>
 <body>
 <div class="wrap">
 
   <header>
-    <div class="eyebrow">Fintra · Sprint Product Top</div>
-    <h1>El buzón, ordenado solo</h1>
-    <p class="sub">Pega una reseña o un mensaje de soporte, o sube un Excel con varios de una vez. El sistema clasifica por severidad y área, y si es bloqueante arma el bug report completo — el mismo criterio de las Partes 1 y 2, sin hacerlo a mano cada vez.</p>
+    <div class="brand">
+      <div class="logo">
+        <svg viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+          <path d="M3 8.5 11.05 4a2 2 0 0 1 1.9 0L21 8.5" stroke="#fff" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/>
+          <path d="M3 8.5v9a1.7 1.7 0 0 0 1.7 1.7h14.6A1.7 1.7 0 0 0 21 17.5v-9" stroke="#fff" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/>
+          <path d="M3 8.5l7.1 5.2a2.2 2.2 0 0 0 2.6 0L19.8 8.5" stroke="#fff" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/>
+        </svg>
+      </div>
+      <div>
+        <div class="eyebrow">Fintra<span class="dot">·</span>Producto</div>
+        <h1>Buzón de soporte</h1>
+      </div>
+    </div>
+    <p class="sub">Pega una reseña o un mensaje de soporte, o sube un Excel con varios de una vez. Clasifica por severidad y área funcional, arma el bug report cuando aplica y señala cuándo conviene revisarlo a mano — para que el equipo no tenga que ordenarlo todo manualmente.</p>
   </header>
 
   <div class="tabs">
@@ -150,7 +189,7 @@
   <div class="mode active" id="modeUno">
     <div class="panel">
       <label for="input">Comentario o mensaje de soporte, tal cual llegó</label>
-      <textarea id="input" placeholder="Ej: Cliente de México dice que no le deja emitir facturas desde el celular, le sale un error. Ya le pasó 3 veces...">Cliente de México dice que no le deja emitir facturas desde el celular, le sale un error. Ya le pasó 3 veces. Es urgente porque tiene que facturar hoy. Android creo. Le dije que reinstalara y sigue igual.</textarea>
+      <textarea id="input" placeholder="Ej: Cliente de México dice que no le deja emitir facturas desde el celular, le sale un error. Ya le pasó 3 veces..."></textarea>
 
       <div class="row">
         <div>
@@ -186,7 +225,7 @@
   <div class="mode" id="modeLote">
     <div class="panel">
       <label for="fileInput">Excel con los comentarios (.xlsx o .xls)</label>
-      <p class="preview">Columnas esperadas, en cualquier orden: <b>N°</b> (opcional), <b>País</b> (opcional), <b>Calificación</b> (opcional, no se usa para clasificar), <b>Comentario</b> (obligatorio). Si no tienes uno a mano, descarga la plantilla con los 16 comentarios de la Parte 1.</p>
+      <p class="preview">Columnas esperadas, en cualquier orden: <b>N°</b> (opcional), <b>País</b> (opcional), <b>Calificación</b> (opcional, no se usa para clasificar), <b>Comentario</b> (obligatorio). Si no tienes uno a mano, descarga la plantilla de ejemplo.</p>
       <div class="filerow">
         <input type="file" id="fileInput" accept=".xlsx,.xls" style="max-width:320px;">
         <button class="ghost" onclick="descargarPlantilla()">Descargar plantilla de ejemplo</button>
@@ -202,10 +241,6 @@
   </div>
 
   <div class="stats" id="statsBox"></div>
-
-  <p class="note">
-    Herramienta construida para la Parte 4 del reto técnico de Alegra. Usa la API gratuita de Groq (modelo GPT-OSS 120B) llamada directamente desde el navegador — la key se inyecta al desplegar desde un secret de GitHub Actions, nunca queda escrita en el código fuente del repositorio.
-  </p>
 
 </div>
 
@@ -360,8 +395,8 @@ function getKey(){
 }
 
 // ---------- estadísticas de sesión (localStorage) ----------
-// Sirve como mini-indicador de proceso para la Parte 5: cuántos comentarios
-// se triagearon y en qué % se generó un bug report automáticamente.
+// Mini-indicador de proceso: cuántos comentarios se triagearon en esta sesión
+// y en qué porcentaje se generó un bug report automáticamente.
 
 const STATS_KEY = "fintra_triage_stats_v1";
 
@@ -483,7 +518,7 @@ function render(p, container){
     <h2>Clasificación</h2>
     <div class="field">
       <span class="badge ${sc}">${esc(p.severidad)}</span>
-      <span class="badge deseable" style="background:#556;">${esc(p.area_funcional)}</span>
+      <span class="badge area">${esc(p.area_funcional)}</span>
       ${p.confianza ? `<span class="badge ${cc}">Confianza: ${esc(p.confianza)}</span>` : ''}
     </div>
     <div class="field"><b>País:</b> ${esc(p.pais || "No especificado")}</div>
@@ -550,38 +585,120 @@ function filaDesdeResultado(r){
     "Razón confianza": p.razon_confianza || "",
     "Tiene bug report": b ? "Sí" : "No",
     "Bug: título": b?.titulo || "", "Bug: entorno": b?.entorno || "",
-    "Bug: pasos": (b?.pasos_reproducir || []).join(" | "),
+    "Bug: pasos": (b?.pasos_reproducir || []).map((s,i) => `${i+1}. ${s}`).join("\n"),
     "Bug: resultado esperado": b?.resultado_esperado || "", "Bug: resultado actual": b?.resultado_actual || "",
     "Bug: severidad": b?.severidad_bug || "", "Bug: razón severidad": b?.razon_severidad || "",
-    "Bug: preguntas a soporte": (b?.preguntas_soporte || []).join(" | "),
+    "Bug: preguntas a soporte": (b?.preguntas_soporte || []).map((q,i) => `${i+1}. ${q}`).join("\n"),
     "Relación con embudo": (p.relacion_embudo && p.relacion_embudo.aplica) ? (p.relacion_embudo.nota || "Sí") : "",
     "Error": ""
   };
 }
 
-function descargarFilas(filas, nombreBase, formato){
+// ---------- exportar (Excel con estilo real vía ExcelJS, CSV vía SheetJS) ----------
+
+const COLUMNAS_EXPORT = [
+  { key: "ID", width: 8 },
+  { key: "País", width: 16 },
+  { key: "Comentario", width: 46 },
+  { key: "Severidad", width: 14 },
+  { key: "Área funcional", width: 20 },
+  { key: "Confianza", width: 12 },
+  { key: "Razón clasificación", width: 40 },
+  { key: "Razón confianza", width: 32 },
+  { key: "Tiene bug report", width: 14 },
+  { key: "Bug: título", width: 28 },
+  { key: "Bug: entorno", width: 24 },
+  { key: "Bug: pasos", width: 44 },
+  { key: "Bug: resultado esperado", width: 28 },
+  { key: "Bug: resultado actual", width: 28 },
+  { key: "Bug: severidad", width: 14 },
+  { key: "Bug: razón severidad", width: 28 },
+  { key: "Bug: preguntas a soporte", width: 44 },
+  { key: "Relación con embudo", width: 34 },
+  { key: "Error", width: 30 },
+];
+
+const COLORES_EXPORT = {
+  header: 'FF0A6D63', headerText: 'FFFFFFFF',
+  banda: 'FFF1F9F8',
+  bloqueante: ['FFFAECE9','FFB23B2E'], degradante: ['FFFAF1DE','FFA06A12'], deseable: ['FFE6F5EB','FF1C7A4B'],
+  confAlta: ['FFE6F5EB','FF1C7A4B'], confMedia: ['FFFAF1DE','FFA06A12'], confBaja: ['FFFAECE9','FFB23B2E'],
+};
+
+function descargarBlob(blob, nombreArchivo){
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url; a.download = nombreArchivo;
+  a.click();
+  URL.revokeObjectURL(url);
+}
+
+async function generarExcelEstilizado(filas, nombreBase){
+  const wb = new ExcelJS.Workbook();
+  wb.creator = 'Fintra';
+  wb.created = new Date();
+  const ws = wb.addWorksheet('Resultados', { views: [{ state: 'frozen', ySplit: 1 }] });
+  ws.columns = COLUMNAS_EXPORT.map(c => ({ header: c.key, key: c.key, width: c.width }));
+  filas.forEach(f => ws.addRow(f));
+
+  const headerRow = ws.getRow(1);
+  headerRow.height = 24;
+  headerRow.eachCell(cell => {
+    cell.font = { bold: true, color: { argb: COLORES_EXPORT.headerText }, size: 11 };
+    cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: COLORES_EXPORT.header } };
+    cell.alignment = { vertical: 'middle', horizontal: 'left', wrapText: true };
+  });
+
+  ws.eachRow((row, rowNumber) => {
+    if (rowNumber === 1) return;
+    row.height = 60;
+    row.eachCell(cell => {
+      cell.alignment = { vertical: 'top', wrapText: true };
+      cell.border = { bottom: { style: 'thin', color: { argb: 'FFD9E9E7' } } };
+    });
+    if (rowNumber % 2 === 0){
+      row.eachCell(cell => {
+        cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: COLORES_EXPORT.banda } };
+      });
+    }
+    const sevCell = row.getCell('Severidad');
+    const sevPair = { bloqueante: COLORES_EXPORT.bloqueante, degradante: COLORES_EXPORT.degradante, deseable: COLORES_EXPORT.deseable }[sevClass(sevCell.value)];
+    if (sevPair){
+      sevCell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: sevPair[0] } };
+      sevCell.font = { bold: true, color: { argb: sevPair[1] } };
+    }
+    const confCell = row.getCell('Confianza');
+    const confPair = { 'conf-alta': COLORES_EXPORT.confAlta, 'conf-media': COLORES_EXPORT.confMedia, 'conf-baja': COLORES_EXPORT.confBaja }[confClass(confCell.value)];
+    if (confPair){
+      confCell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: confPair[0] } };
+      confCell.font = { bold: true, color: { argb: confPair[1] } };
+    }
+  });
+
+  const buffer = await wb.xlsx.writeBuffer();
+  descargarBlob(new Blob([buffer], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' }), nombreBase + '.xlsx');
+}
+
+function generarCSV(filas, nombreBase){
   const ws = XLSX.utils.json_to_sheet(filas);
+  const csv = XLSX.utils.sheet_to_csv(ws);
+  descargarBlob(new Blob(["\uFEFF" + csv], { type: 'text/csv;charset=utf-8;' }), nombreBase + '.csv');
+}
+
+async function exportarFilas(filas, nombreBase, formato){
+  if (!filas.length) return;
   if (formato === 'csv'){
-    const csv = XLSX.utils.sheet_to_csv(ws);
-    const blob = new Blob(["\uFEFF" + csv], { type: 'text/csv;charset=utf-8;' });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url; a.download = nombreBase + '.csv';
-    a.click();
-    URL.revokeObjectURL(url);
+    generarCSV(filas, nombreBase);
   } else {
-    ws['!cols'] = Object.keys(filas[0] || {}).map(() => ({ wch: 22 }));
-    const wb = XLSX.utils.book_new();
-    XLSX.utils.book_append_sheet(wb, ws, "Resultados");
-    XLSX.writeFile(wb, nombreBase + '.xlsx');
+    await generarExcelEstilizado(filas, nombreBase);
   }
 }
 
-function exportarUno(formato){
+async function exportarUno(formato){
   const result = document.getElementById('result');
   const p = JSON.parse(result.dataset.ultimoResultado || "{}");
   const fila = filaDesdeResultado({ ok: true, data: p, id: "1", pais: p.pais, comentario: document.getElementById('input').value.trim() });
-  descargarFilas([fila], 'fintra_resultado', formato);
+  await exportarFilas([fila], 'fintra_resultado', formato);
 }
 
 // ---------- modo: lote (Excel) ----------
@@ -720,7 +837,7 @@ async function reintentarFallidos(){
 }
 
 function renderLote(resultados, container){
-  // Agrupar por severidad x área, igual criterio que la tabla de la Parte 1
+  // Agrupa por severidad × área funcional
   const grupos = {}; // key: "Severidad||Área" -> [ids]
   const orden = ["Bloqueante", "Degradante", "Deseable"];
 
@@ -779,7 +896,7 @@ function renderLote(resultados, container){
     let inner = `
       <div class="field">
         <span class="badge ${sc}">${esc(p.severidad)}</span>
-        <span class="badge deseable" style="background:#556;">${esc(p.area_funcional)}</span>
+        <span class="badge area">${esc(p.area_funcional)}</span>
         ${p.confianza ? `<span class="badge ${cc}">Confianza: ${esc(p.confianza)}</span>` : ''}
       </div>
       <div class="field"><b>País:</b> ${esc(p.pais || "No especificado")}</div>
@@ -811,24 +928,34 @@ function renderLote(resultados, container){
   container.style.display = "block";
 }
 
-function descargarPlantilla(){
-  const data = [
-    ["N°", "País", "Calificación", "Comentario"],
-    [1, "México", 2, "No me deja emitir la factura, dice error de RFC del receptor pero el RFC está bien. Perdí un cliente hoy."],
-    [2, "Colombia", 1, "Desde la última actualización la app se cierra sola cuando abro Reportes."],
-    [9, "Colombia", 1, "Actualicé y ya no me abre. Pantalla blanca."],
+async function descargarPlantilla(){
+  const wb = new ExcelJS.Workbook();
+  const ws = wb.addWorksheet('Comentarios');
+  ws.columns = [
+    { header: 'N°', key: 'n', width: 6 },
+    { header: 'País', key: 'pais', width: 18 },
+    { header: 'Calificación', key: 'calif', width: 12 },
+    { header: 'Comentario', key: 'comentario', width: 80 },
   ];
-  const ws = XLSX.utils.aoa_to_sheet(data);
-  ws['!cols'] = [{wch:6},{wch:18},{wch:12},{wch:80}];
-  const wb = XLSX.utils.book_new();
-  XLSX.utils.book_append_sheet(wb, ws, "Comentarios");
-  XLSX.writeFile(wb, "plantilla_fintra_lote.xlsx");
+  ws.addRow({ n: 1, pais: 'México', calif: 2, comentario: 'No me deja emitir la factura, dice error de RFC del receptor pero el RFC está bien. Perdí un cliente hoy.' });
+  ws.addRow({ n: 2, pais: 'Colombia', calif: 1, comentario: 'Desde la última actualización la app se cierra sola cuando abro Reportes.' });
+  ws.addRow({ n: 3, pais: 'Colombia', calif: 1, comentario: 'Actualicé y ya no me abre. Pantalla blanca.' });
+
+  const headerRow = ws.getRow(1);
+  headerRow.eachCell(cell => {
+    cell.font = { bold: true, color: { argb: 'FFFFFFFF' } };
+    cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: COLORES_EXPORT.header } };
+  });
+  ws.eachRow((row, i) => { if (i > 1) row.getCell('comentario').alignment = { wrapText: true, vertical: 'top' }; });
+
+  const buffer = await wb.xlsx.writeBuffer();
+  descargarBlob(new Blob([buffer], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' }), 'plantilla_fintra_lote.xlsx');
 }
 
-function exportarLote(formato){
+async function exportarLote(formato){
   if (!loteResultados.length) return;
   const filas = loteResultados.map(filaDesdeResultado);
-  descargarFilas(filas, 'fintra_lote_resultados', formato);
+  await exportarFilas(filas, 'fintra_lote_resultados', formato);
 }
 </script>
 </body>

@@ -290,8 +290,13 @@ function validarClasificacion(p){
   return p && typeof p === "object" && p.severidad && p.area_funcional;
 }
 
-// Llama a Groq una vez. Reintenta una vez si es 429 (rate limit del free tier).
-async function llamarGroq(key, systemPrompt, userMsg, reintentos = 1){
+// Llama a Groq. Ante un 429 (rate limit del free tier) reintenta con backoff
+// exponencial (2s, 4s, 8s, 16s), respetando el header Retry-After si Groq lo manda.
+// onWait(segundos, intento) se invoca antes de cada espera, para poder mostrar
+// progreso en la UI durante lotes largos.
+async function llamarGroq(key, systemPrompt, userMsg, opts = {}){
+  const { reintentos = 4, intento = 0, onWait = null } = opts;
+
   const resp = await fetch("https://api.groq.com/openai/v1/chat/completions", {
     method: "POST",
     headers: {
@@ -308,13 +313,16 @@ async function llamarGroq(key, systemPrompt, userMsg, reintentos = 1){
     })
   });
 
-  if (resp.status === 429 && reintentos > 0){
-    await new Promise(r => setTimeout(r, 2000));
-    return llamarGroq(key, systemPrompt, userMsg, reintentos - 1);
+  if (resp.status === 429 && intento < reintentos){
+    const retryAfterHeader = parseFloat(resp.headers.get("retry-after"));
+    const esperaSeg = !isNaN(retryAfterHeader) ? retryAfterHeader : Math.pow(2, intento + 1); // 2,4,8,16
+    if (onWait) onWait(esperaSeg, intento + 1);
+    await new Promise(r => setTimeout(r, esperaSeg * 1000));
+    return llamarGroq(key, systemPrompt, userMsg, { reintentos, intento: intento + 1, onWait });
   }
   if (!resp.ok){
     if (resp.status === 429){
-      throw new Error("Límite de peticiones de Groq (free tier) alcanzado. Espera un momento y reintenta.");
+      throw new Error(`Límite de peticiones de Groq (free tier) alcanzado, tras ${reintentos} reintentos. Espera un minuto y reintenta este comentario.`);
     }
     const errText = await resp.text();
     throw new Error(`Groq respondió ${resp.status}: ${errText.slice(0,200)}`);
@@ -408,7 +416,9 @@ async function analizar(){
   const userMsg = `Fuente: ${fuente}\nPaís indicado por quien reporta (puede estar vacío): ${pais || "no indicado"}\n\nTexto tal cual llegó:\n"""${text}"""`;
 
   try{
-    const parsed = await llamarGroq(key, SYSTEM_PROMPT, userMsg);
+    const parsed = await llamarGroq(key, SYSTEM_PROMPT, userMsg, {
+      onWait: (seg, intento) => { status.textContent = `Límite alcanzado, reintentando en ${seg}s (intento ${intento})...`; }
+    });
     render(parsed, result);
     registrarClasificacion(!!parsed.bug_report);
     status.textContent = "Listo.";
@@ -540,6 +550,36 @@ document.getElementById('fileInput').addEventListener('change', async (e) => {
   }
 });
 
+let loteResultados = []; // se mantiene entre corridas para poder "reintentar fallidos"
+
+// Procesa una lista de filas {id, pais, comentario} contra Groq, secuencialmente,
+// con pausa entre llamadas y backoff automático ante 429. Devuelve [{id, comentario, pais, ok, data|error}].
+async function procesarFilas(key, filas, status, progressBar, offsetTotal, totalGeneral){
+  const salida = [];
+  for (let i = 0; i < filas.length; i++){
+    const row = filas[i];
+    const n = offsetTotal + i + 1;
+    status.textContent = `Procesando ${n} de ${totalGeneral}...`;
+    progressBar.style.width = `${Math.round(((n - 1) / totalGeneral) * 100)}%`;
+
+    const userMsg = `Fuente: No especificada\nPaís indicado por quien reporta (puede estar vacío): ${row.pais || "no indicado"}\n\nTexto tal cual llegó:\n"""${row.comentario}"""`;
+
+    try{
+      const parsed = await llamarGroq(key, SYSTEM_PROMPT, userMsg, {
+        onWait: (seg, intento) => { status.textContent = `#${row.id}: límite alcanzado, reintentando en ${seg}s (intento ${intento})...`; }
+      });
+      salida.push({ id: row.id, comentario: row.comentario, pais: row.pais, ok: true, data: parsed });
+      registrarClasificacion(!!parsed.bug_report);
+    }catch(err){
+      salida.push({ id: row.id, comentario: row.comentario, pais: row.pais, ok: false, error: err.message });
+    }
+
+    // pausa entre llamadas para no saturar el free tier de Groq
+    if (n < totalGeneral) await new Promise(r => setTimeout(r, 1200));
+  }
+  return salida;
+}
+
 async function analizarLote(){
   const key = getKey();
   const btn = document.getElementById('runLoteBtn');
@@ -559,32 +599,41 @@ async function analizarLote(){
   btn.disabled = true;
   progressWrap.style.display = "block";
 
-  const resultados = [];
-
-  for (let i = 0; i < loteRows.length; i++){
-    const row = loteRows[i];
-    status.textContent = `Procesando ${i + 1} de ${loteRows.length}...`;
-    progressBar.style.width = `${Math.round(((i) / loteRows.length) * 100)}%`;
-
-    const userMsg = `Fuente: No especificada\nPaís indicado por quien reporta (puede estar vacío): ${row.pais || "no indicado"}\n\nTexto tal cual llegó:\n"""${row.comentario}"""`;
-
-    try{
-      const parsed = await llamarGroq(key, SYSTEM_PROMPT, userMsg);
-      resultados.push({ id: row.id, comentario: row.comentario, pais: row.pais, ok: true, data: parsed });
-      registrarClasificacion(!!parsed.bug_report);
-    }catch(err){
-      resultados.push({ id: row.id, comentario: row.comentario, pais: row.pais, ok: false, error: err.message });
-    }
-
-    // pequeña pausa entre llamadas para no saturar el free tier de Groq
-    if (i < loteRows.length - 1) await new Promise(r => setTimeout(r, 350));
-  }
+  loteResultados = await procesarFilas(key, loteRows, status, progressBar, 0, loteRows.length);
 
   progressBar.style.width = "100%";
-  status.textContent = `Listo — ${resultados.filter(r=>r.ok).length} de ${resultados.length} clasificados sin error.`;
+  const fallidos = loteResultados.filter(r => !r.ok).length;
+  status.textContent = `Listo — ${loteResultados.length - fallidos} de ${loteResultados.length} clasificados sin error${fallidos ? `, ${fallidos} fallido(s)` : ""}.`;
   btn.disabled = false;
 
-  renderLote(resultados, result);
+  renderLote(loteResultados, result);
+}
+
+async function reintentarFallidos(){
+  const key = getKey();
+  const status = document.getElementById('statusLote');
+  const result = document.getElementById('resultLote');
+  const progressBar = document.getElementById('progressBar');
+  const btn = document.getElementById('runLoteBtn');
+
+  const filasFallidas = loteResultados
+    .filter(r => !r.ok)
+    .map(r => ({ id: r.id, pais: r.pais, comentario: r.comentario }));
+
+  if (!filasFallidas.length) return;
+
+  btn.disabled = true;
+  const nuevos = await procesarFilas(key, filasFallidas, status, progressBar, 0, filasFallidas.length);
+
+  // reemplaza en loteResultados los que ahora sí se clasificaron
+  const porId = new Map(nuevos.map(n => [n.id, n]));
+  loteResultados = loteResultados.map(r => porId.has(r.id) ? porId.get(r.id) : r);
+
+  const fallidos = loteResultados.filter(r => !r.ok).length;
+  status.textContent = `Reintento listo — ${fallidos} fallido(s) restante(s).`;
+  btn.disabled = false;
+
+  renderLote(loteResultados, result);
 }
 
 function renderLote(resultados, container){
@@ -618,7 +667,8 @@ function renderLote(resultados, container){
   const errores = resultados.filter(r => !r.ok);
   if (errores.length){
     html += `<div class="flag" style="margin-bottom:22px;"><b>${errores.length} comentario(s) no se pudieron clasificar:</b><br>` +
-      errores.map(r => `#${esc(r.id)} — ${esc(r.error)}`).join("<br>") + `</div>`;
+      errores.map(r => `#${esc(r.id)} — ${esc(r.error)}`).join("<br>") +
+      `<br><button class="ghost" onclick="reintentarFallidos()">Reintentar solo los fallidos</button></div>`;
   }
 
   html += `<h2>Detalle por comentario</h2>`;

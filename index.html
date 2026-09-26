@@ -57,12 +57,6 @@
     padding:6px 12px; font-size:0.85rem; margin-top:0;
   }
 
-  .keybar{
-    display:flex; align-items:center; gap:10px; font-size:0.85rem; color:var(--muted);
-    margin-bottom:18px; flex-wrap:wrap;
-  }
-  .keybar input{flex:1; min-width:220px;}
-
   #status{font-size:0.9rem; color:var(--muted); margin-top:10px; min-height:1.2em;}
 
   .result{display:none;}
@@ -103,12 +97,6 @@
   </header>
 
   <div class="panel">
-    <div class="keybar">
-      <span>Groq API key:</span>
-      <input type="password" id="apiKey" placeholder="gsk_...">
-      <button class="ghost" onclick="saveKey()">Guardar en este navegador</button>
-    </div>
-
     <label for="input">Comentario o mensaje de soporte, tal cual llegó</label>
     <textarea id="input" placeholder="Ej: Cliente de México dice que no le deja emitir facturas desde el celular, le sale un error. Ya le pasó 3 veces...">Cliente de México dice que no le deja emitir facturas desde el celular, le sale un error. Ya le pasó 3 veces. Es urgente porque tiene que facturar hoy. Android creo. Le dije que reinstalara y sigue igual.</textarea>
 
@@ -124,7 +112,13 @@
       </div>
       <div>
         <label for="pais">País (si lo sabes)</label>
-        <input type="text" id="pais" placeholder="Ej: México">
+        <select id="pais">
+          <option value="">No especificado</option>
+          <option value="México">México</option>
+          <option value="Colombia">Colombia</option>
+          <option value="República Dominicana">República Dominicana</option>
+          <option value="España">España</option>
+        </select>
       </div>
     </div>
 
@@ -136,35 +130,15 @@
   <div class="panel result" id="result"></div>
 
   <p class="note">
-    Herramienta construida para la Parte 4 del reto técnico de Alegra. Usa la API gratuita de Groq (modelo Llama 3.3 70B) llamada directamente desde tu navegador — la key nunca se envía a ningún lado excepto a Groq, y solo vive en el almacenamiento local de este navegador.
+    Herramienta construida para la Parte 4 del reto técnico de Alegra. Usa la API gratuita de Groq (modelo GPT-OSS 120B) llamada directamente desde el navegador — la key se inyecta al desplegar desde un secret de GitHub Actions, nunca queda escrita en el código fuente del repositorio.
   </p>
 
 </div>
 
 <script>
-const STORAGE_KEY = "fintra_groq_key";
 // En el repo esto queda literalmente como "__GROQ_KEY__".
 // El workflow de GitHub Actions lo reemplaza por el valor real del secret GROQ_API_KEY al desplegar.
 const GROQ_KEY = "__GROQ_KEY__";
-
-window.onload = () => {
-  if (GROQ_KEY && GROQ_KEY !== "__GROQ_KEY__"){
-    // La página ya viene con la key inyectada por el deploy: la precargamos.
-    document.getElementById('apiKey').value = GROQ_KEY;
-    return;
-  }
-  const saved = localStorage.getItem(STORAGE_KEY);
-  if (saved) document.getElementById('apiKey').value = saved;
-};
-
-function saveKey(){
-  const k = document.getElementById('apiKey').value.trim();
-  if (!k){ alert("Pega tu API key de Groq primero."); return; }
-  localStorage.setItem(STORAGE_KEY, k);
-  const s = document.getElementById('status');
-  s.textContent = "Key guardada en este navegador.";
-  setTimeout(()=> s.textContent = "", 2000);
-}
 
 const SYSTEM_PROMPT = `Eres el sistema de triage del "Buzón de Fintra", una app de facturación y contabilidad para pequeños negocios en México, Colombia, República Dominicana y España.
 
@@ -210,7 +184,7 @@ Responde SOLO con un objeto JSON válido, sin texto adicional, sin backticks, co
 }`;
 
 async function analizar(){
-  const key = document.getElementById('apiKey').value.trim();
+  const key = (GROQ_KEY && GROQ_KEY !== "__GROQ_KEY__") ? GROQ_KEY : "";
   const text = document.getElementById('input').value.trim();
   const fuente = document.getElementById('fuente').value;
   const pais = document.getElementById('pais').value.trim();
@@ -222,7 +196,7 @@ async function analizar(){
   errorBox.textContent = "";
   result.style.display = "none";
 
-  if (!key){ errorBox.textContent = "Falta tu API key de Groq (arriba, a la derecha)."; return; }
+  if (!key){ errorBox.textContent = "Falta la API key de Groq — verifica que el secret GROQ_API_KEY esté configurado y que el workflow se haya vuelto a desplegar."; return; }
   if (!text){ errorBox.textContent = "Pega un comentario o mensaje primero."; return; }
 
   btn.disabled = true;

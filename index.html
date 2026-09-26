@@ -4,6 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Buzón de Fintra — Triage automático</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
 <style>
   :root{
     --ink:#1c2530;
@@ -23,27 +24,38 @@
     margin:0; background:var(--paper); color:var(--ink);
     padding: 40px 20px 80px;
   }
-  .wrap{max-width:760px; margin:0 auto;}
+  .wrap{max-width:820px; margin:0 auto;}
   header{margin-bottom:32px;}
   .eyebrow{font-family: 'Courier New', monospace; font-size:13px; color:var(--muted); letter-spacing:0.02em;}
   h1{
     font-size:2.2rem; margin: 6px 0 8px; font-weight:600; line-height:1.15;
   }
-  .sub{color:var(--muted); font-size:1.05rem; max-width:56ch; line-height:1.5;}
+  .sub{color:var(--muted); font-size:1.05rem; max-width:60ch; line-height:1.5;}
+
+  .tabs{display:flex; gap:8px; margin-bottom:16px; flex-wrap:wrap;}
+  .tab{
+    font-family:'Courier New', monospace; font-size:0.85rem; padding:8px 14px;
+    background:var(--card); border:1px solid var(--line); border-radius:999px;
+    cursor:pointer; color:var(--muted);
+  }
+  .tab.active{background:var(--accent); color:#fff; border-color:var(--accent);}
+  .mode{display:none;}
+  .mode.active{display:block;}
 
   .panel{
     background:var(--card); border:1px solid var(--line); border-radius:4px;
     padding:24px; margin-bottom:20px;
   }
   label{display:block; font-size:0.9rem; color:var(--muted); margin-bottom:6px;}
-  textarea, input[type=text], input[type=password], select{
+  textarea, input[type=text], input[type=password], input[type=file], select{
     width:100%; font-family: inherit; font-size:1rem; padding:10px 12px;
     border:1px solid var(--line); border-radius:3px; background:#fffdf9;
     color:var(--ink);
   }
   textarea{min-height:110px; resize:vertical;}
+  textarea:disabled, input:disabled, select:disabled{opacity:0.6;}
   .row{display:flex; gap:16px; flex-wrap:wrap; margin-top:14px;}
-  .row > div{flex:1; min-width:180px;}
+  .row > div{flex:1; min-width:160px;}
 
   button{
     font-family: inherit; font-size:1rem; padding:11px 20px;
@@ -54,10 +66,11 @@
   button:disabled{background:#a9a49a; cursor:default;}
   button.ghost{
     background:transparent; color:var(--accent-ink); border:1px solid var(--line);
-    padding:6px 12px; font-size:0.85rem; margin-top:0;
+    padding:6px 12px; font-size:0.85rem; margin-top:10px;
   }
+  button.ghost:hover{background:#efeae0;}
 
-  #status{font-size:0.9rem; color:var(--muted); margin-top:10px; min-height:1.2em;}
+  #status, #statusLote{font-size:0.9rem; color:var(--muted); margin-top:10px; min-height:1.2em;}
 
   .result{display:none;}
   .badge{
@@ -67,6 +80,7 @@
   .badge.bloqueante{background:var(--bloqueante);}
   .badge.degradante{background:var(--degradante);}
   .badge.deseable{background:var(--deseable);}
+  .badge.error{background:#8a3b3b;}
 
   h2{font-size:1.1rem; margin: 0 0 10px; border-bottom:1px solid var(--line); padding-bottom:8px;}
   .field{margin-bottom:10px; font-size:0.97rem; line-height:1.5;}
@@ -85,6 +99,34 @@
     font-size:0.85rem; color:var(--muted); margin-top:22px; line-height:1.6;
   }
   .error{color:var(--bloqueante); font-size:0.9rem; margin-top:10px;}
+
+  /* Lote */
+  .filerow{display:flex; gap:12px; align-items:center; flex-wrap:wrap; margin-top:6px;}
+  .filerow button{margin-top:0;}
+  .preview{font-size:0.85rem; color:var(--muted); margin-top:10px;}
+  .progressbar{
+    height:6px; background:var(--line); border-radius:3px; overflow:hidden; margin-top:14px;
+  }
+  .progressbar > div{height:100%; background:var(--accent); width:0%; transition:width 0.2s;}
+
+  table.agg{width:100%; border-collapse:collapse; font-size:0.92rem; margin-bottom:22px;}
+  table.agg th, table.agg td{border:1px solid var(--line); padding:8px 10px; text-align:left; vertical-align:top;}
+  table.agg th{background:#efeae0; font-weight:600;}
+  tr.sev-bloqueante td:first-child{border-left:4px solid var(--bloqueante);}
+  tr.sev-degradante td:first-child{border-left:4px solid var(--degradante);}
+  tr.sev-deseable td:first-child{border-left:4px solid var(--deseable);}
+
+  .item{border:1px solid var(--line); border-radius:3px; padding:16px; margin-bottom:14px; background:#fffdf9;}
+  .item summary{cursor:pointer; font-size:0.95rem; list-style:none;}
+  .item summary::-webkit-details-marker{display:none;}
+  .item summary .txt{color:var(--muted); font-size:0.88rem; margin-top:4px;}
+  .item[open] summary{margin-bottom:12px;}
+
+  .stats{
+    font-family:'Courier New', monospace; font-size:0.8rem; color:var(--muted);
+    border-top:1px dashed var(--line); margin-top:36px; padding-top:14px; line-height:1.7;
+  }
+  .stats button.ghost{padding:4px 10px; font-size:0.78rem;}
 </style>
 </head>
 <body>
@@ -93,41 +135,70 @@
   <header>
     <div class="eyebrow">Fintra · Sprint Product Top</div>
     <h1>El buzón, ordenado solo</h1>
-    <p class="sub">Pega una reseña o un mensaje de soporte tal como llega. El sistema lo clasifica por severidad y área, y si es bloqueante arma el bug report completo — el mismo criterio de las Partes 1 y 2, sin que alguien tenga que hacerlo a mano cada vez.</p>
+    <p class="sub">Pega una reseña o un mensaje de soporte, o sube un Excel con varios de una vez. El sistema clasifica por severidad y área, y si es bloqueante arma el bug report completo — el mismo criterio de las Partes 1 y 2, sin hacerlo a mano cada vez.</p>
   </header>
 
-  <div class="panel">
-    <label for="input">Comentario o mensaje de soporte, tal cual llegó</label>
-    <textarea id="input" placeholder="Ej: Cliente de México dice que no le deja emitir facturas desde el celular, le sale un error. Ya le pasó 3 veces...">Cliente de México dice que no le deja emitir facturas desde el celular, le sale un error. Ya le pasó 3 veces. Es urgente porque tiene que facturar hoy. Android creo. Le dije que reinstalara y sigue igual.</textarea>
-
-    <div class="row">
-      <div>
-        <label for="fuente">Fuente (opcional)</label>
-        <select id="fuente">
-          <option value="No especificada">No especificada</option>
-          <option value="Reseña de Google Play">Reseña de Google Play</option>
-          <option value="Ticket de soporte">Ticket de soporte</option>
-          <option value="Sesión con cliente">Sesión con cliente</option>
-        </select>
-      </div>
-      <div>
-        <label for="pais">País (si lo sabes)</label>
-        <select id="pais">
-          <option value="">No especificado</option>
-          <option value="México">México</option>
-          <option value="Colombia">Colombia</option>
-          <option value="República Dominicana">República Dominicana</option>
-          <option value="España">España</option>
-        </select>
-      </div>
-    </div>
-
-    <button id="runBtn" onclick="analizar()">Analizar</button>
-    <div id="status"></div>
-    <div id="errorBox" class="error"></div>
+  <div class="tabs">
+    <div class="tab active" id="tabUno" onclick="switchMode('uno')">Un comentario</div>
+    <div class="tab" id="tabLote" onclick="switchMode('lote')">Lote (Excel)</div>
   </div>
 
-  <div class="panel result" id="result"></div>
+  <!-- MODO: UN COMENTARIO -->
+  <div class="mode active" id="modeUno">
+    <div class="panel">
+      <label for="input">Comentario o mensaje de soporte, tal cual llegó</label>
+      <textarea id="input" placeholder="Ej: Cliente de México dice que no le deja emitir facturas desde el celular, le sale un error. Ya le pasó 3 veces...">Cliente de México dice que no le deja emitir facturas desde el celular, le sale un error. Ya le pasó 3 veces. Es urgente porque tiene que facturar hoy. Android creo. Le dije que reinstalara y sigue igual.</textarea>
+
+      <div class="row">
+        <div>
+          <label for="fuente">Fuente (opcional)</label>
+          <select id="fuente">
+            <option value="No especificada">No especificada</option>
+            <option value="Reseña de Google Play">Reseña de Google Play</option>
+            <option value="Ticket de soporte">Ticket de soporte</option>
+            <option value="Sesión con cliente">Sesión con cliente</option>
+          </select>
+        </div>
+        <div>
+          <label for="pais">País (si lo sabes)</label>
+          <select id="pais">
+            <option value="">No especificado</option>
+            <option value="México">México</option>
+            <option value="Colombia">Colombia</option>
+            <option value="República Dominicana">República Dominicana</option>
+            <option value="España">España</option>
+          </select>
+        </div>
+      </div>
+
+      <button id="runBtn" onclick="analizar()">Analizar</button>
+      <div id="status"></div>
+      <div id="errorBox" class="error"></div>
+    </div>
+
+    <div class="panel result" id="result"></div>
+  </div>
+
+  <!-- MODO: LOTE -->
+  <div class="mode" id="modeLote">
+    <div class="panel">
+      <label for="fileInput">Excel con los comentarios (.xlsx o .xls)</label>
+      <p class="preview">Columnas esperadas, en cualquier orden: <b>N°</b> (opcional), <b>País</b> (opcional), <b>Calificación</b> (opcional, no se usa para clasificar), <b>Comentario</b> (obligatorio). Si no tienes uno a mano, descarga la plantilla con los 16 comentarios de la Parte 1.</p>
+      <div class="filerow">
+        <input type="file" id="fileInput" accept=".xlsx,.xls" style="max-width:320px;">
+        <button class="ghost" onclick="descargarPlantilla()">Descargar plantilla de ejemplo</button>
+      </div>
+      <div id="previewLote" class="preview"></div>
+      <button id="runLoteBtn" onclick="analizarLote()" disabled>Analizar lote</button>
+      <div class="progressbar" id="progressWrap" style="display:none;"><div id="progressBar"></div></div>
+      <div id="statusLote"></div>
+      <div id="errorBoxLote" class="error"></div>
+    </div>
+
+    <div class="panel result" id="resultLote"></div>
+  </div>
+
+  <div class="stats" id="statsBox"></div>
 
   <p class="note">
     Herramienta construida para la Parte 4 del reto técnico de Alegra. Usa la API gratuita de Groq (modelo GPT-OSS 120B) llamada directamente desde el navegador — la key se inyecta al desplegar desde un secret de GitHub Actions, nunca queda escrita en el código fuente del repositorio.
@@ -183,8 +254,140 @@ Responde SOLO con un objeto JSON válido, sin texto adicional, sin backticks, co
   "relacion_embudo": { "aplica": true/false, "nota": "..." (si aplica) }
 }`;
 
+// ---------- utilidades compartidas ----------
+
+function esc(s){
+  const d = document.createElement('div');
+  d.textContent = s ?? "";
+  return d.innerHTML;
+}
+
+function sevClass(sev){
+  const s = (sev || "").toLowerCase();
+  if (s.includes("bloq")) return "bloqueante";
+  if (s.includes("degra")) return "degradante";
+  if (s.includes("dese")) return "deseable";
+  return "error";
+}
+
+// Intenta parsear JSON del modelo con dos niveles de tolerancia:
+// 1) parseo directo, 2) extraer el primer bloque {...} por si el modelo
+// agregó texto alrededor pese a la instrucción de "solo JSON".
+function extraerJSON(raw){
+  let text = (raw || "").trim().replace(/^```json/i, "").replace(/^```/, "").replace(/```$/, "").trim();
+  try{
+    return JSON.parse(text);
+  }catch(e){
+    const match = text.match(/\{[\s\S]*\}/);
+    if (match){
+      try{ return JSON.parse(match[0]); }catch(e2){ /* sigue abajo */ }
+    }
+    throw new Error("El modelo no devolvió JSON válido. Respuesta cruda: " + text.slice(0,300));
+  }
+}
+
+function validarClasificacion(p){
+  return p && typeof p === "object" && p.severidad && p.area_funcional;
+}
+
+// Llama a Groq una vez. Reintenta una vez si es 429 (rate limit del free tier).
+async function llamarGroq(key, systemPrompt, userMsg, reintentos = 1){
+  const resp = await fetch("https://api.groq.com/openai/v1/chat/completions", {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      "Authorization": "Bearer " + key
+    },
+    body: JSON.stringify({
+      model: "openai/gpt-oss-120b",
+      temperature: 0.2,
+      messages: [
+        { role: "system", content: systemPrompt },
+        { role: "user", content: userMsg }
+      ]
+    })
+  });
+
+  if (resp.status === 429 && reintentos > 0){
+    await new Promise(r => setTimeout(r, 2000));
+    return llamarGroq(key, systemPrompt, userMsg, reintentos - 1);
+  }
+  if (!resp.ok){
+    if (resp.status === 429){
+      throw new Error("Límite de peticiones de Groq (free tier) alcanzado. Espera un momento y reintenta.");
+    }
+    const errText = await resp.text();
+    throw new Error(`Groq respondió ${resp.status}: ${errText.slice(0,200)}`);
+  }
+
+  const data = await resp.json();
+  const raw = data.choices?.[0]?.message?.content || "";
+  const parsed = extraerJSON(raw);
+  if (!validarClasificacion(parsed)){
+    throw new Error("El JSON no trae 'severidad' o 'area_funcional'. Respuesta: " + JSON.stringify(parsed).slice(0,300));
+  }
+  return parsed;
+}
+
+function getKey(){
+  return (GROQ_KEY && GROQ_KEY.startsWith("gsk_")) ? GROQ_KEY : "";
+}
+
+// ---------- estadísticas de sesión (localStorage) ----------
+// Sirve como mini-indicador de proceso para la Parte 5: cuántos comentarios
+// se triagearon y en qué % se generó un bug report automáticamente.
+
+const STATS_KEY = "fintra_triage_stats_v1";
+
+function leerStats(){
+  try{
+    const raw = localStorage.getItem(STATS_KEY);
+    return raw ? JSON.parse(raw) : { total: 0, conBug: 0 };
+  }catch(e){
+    return { total: 0, conBug: 0 };
+  }
+}
+
+function guardarStats(stats){
+  try{ localStorage.setItem(STATS_KEY, JSON.stringify(stats)); }catch(e){ /* localStorage no disponible, se ignora */ }
+}
+
+function registrarClasificacion(tieneBug){
+  const stats = leerStats();
+  stats.total += 1;
+  if (tieneBug) stats.conBug += 1;
+  guardarStats(stats);
+  pintarStats();
+}
+
+function pintarStats(){
+  const stats = leerStats();
+  const pct = stats.total ? Math.round((stats.conBug / stats.total) * 100) : 0;
+  const box = document.getElementById('statsBox');
+  box.innerHTML = `Sesión: ${stats.total} comentario(s) triageado(s) · ${stats.conBug} con bug report generado (${pct}%)
+    <button class="ghost" onclick="reiniciarStats()">Reiniciar contador</button>`;
+}
+
+function reiniciarStats(){
+  guardarStats({ total: 0, conBug: 0 });
+  pintarStats();
+}
+
+pintarStats();
+
+// ---------- tabs ----------
+
+function switchMode(m){
+  document.getElementById('tabUno').classList.toggle('active', m === 'uno');
+  document.getElementById('tabLote').classList.toggle('active', m === 'lote');
+  document.getElementById('modeUno').classList.toggle('active', m === 'uno');
+  document.getElementById('modeLote').classList.toggle('active', m === 'lote');
+}
+
+// ---------- modo: un comentario ----------
+
 async function analizar(){
-  const key = (GROQ_KEY && GROQ_KEY.startsWith("gsk_")) ? GROQ_KEY : "";
+  const key = getKey();
   const text = document.getElementById('input').value.trim();
   const fuente = document.getElementById('fuente').value;
   const pais = document.getElementById('pais').value.trim();
@@ -205,39 +408,9 @@ async function analizar(){
   const userMsg = `Fuente: ${fuente}\nPaís indicado por quien reporta (puede estar vacío): ${pais || "no indicado"}\n\nTexto tal cual llegó:\n"""${text}"""`;
 
   try{
-    const resp = await fetch("https://api.groq.com/openai/v1/chat/completions", {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        "Authorization": "Bearer " + key
-      },
-      body: JSON.stringify({
-        model: "openai/gpt-oss-120b",
-        temperature: 0.2,
-        messages: [
-          { role: "system", content: SYSTEM_PROMPT },
-          { role: "user", content: userMsg }
-        ]
-      })
-    });
-
-    if (!resp.ok){
-      const errText = await resp.text();
-      throw new Error(`Groq respondió ${resp.status}: ${errText.slice(0,200)}`);
-    }
-
-    const data = await resp.json();
-    let raw = data.choices?.[0]?.message?.content || "";
-    raw = raw.trim().replace(/^```json/i, "").replace(/^```/, "").replace(/```$/, "").trim();
-
-    let parsed;
-    try{
-      parsed = JSON.parse(raw);
-    }catch(e){
-      throw new Error("El modelo no devolvió JSON válido. Respuesta cruda: " + raw.slice(0,300));
-    }
-
-    render(parsed);
+    const parsed = await llamarGroq(key, SYSTEM_PROMPT, userMsg);
+    render(parsed, result);
+    registrarClasificacion(!!parsed.bug_report);
     status.textContent = "Listo.";
   }catch(err){
     errorBox.textContent = "Error: " + err.message;
@@ -247,21 +420,40 @@ async function analizar(){
   }
 }
 
-function esc(s){
-  const d = document.createElement('div');
-  d.textContent = s ?? "";
-  return d.innerHTML;
+function bugReportATexto(b, titulo){
+  if (!b) return "";
+  return [
+    `Título: ${b.titulo || titulo || ""}`,
+    `Entorno: ${b.entorno || ""}`,
+    `Pasos para reproducir:`,
+    ...(b.pasos_reproducir || []).map((s,i) => `  ${i+1}. ${s}`),
+    `Resultado esperado: ${b.resultado_esperado || ""}`,
+    `Resultado actual: ${b.resultado_actual || ""}`,
+    `País / a quién afecta: ${b.pais_afectado || ""}`,
+    `Severidad: ${b.severidad_bug || ""} — ${b.razon_severidad || ""}`,
+    `Preguntas a soporte:`,
+    ...(b.preguntas_soporte || []).map((q,i) => `  ${i+1}. ${q}`),
+  ].join("\n");
 }
 
-function render(p){
-  const result = document.getElementById('result');
-  const sevClass = (p.severidad || "").toLowerCase().includes("bloq") ? "bloqueante"
-                  : (p.severidad || "").toLowerCase().includes("degra") ? "degradante" : "deseable";
+async function copiarTexto(texto, btnEl){
+  try{
+    await navigator.clipboard.writeText(texto);
+    const original = btnEl.textContent;
+    btnEl.textContent = "Copiado ✓";
+    setTimeout(() => { btnEl.textContent = original; }, 1500);
+  }catch(e){
+    alert("No se pudo copiar automáticamente. Selecciona y copia manualmente:\n\n" + texto);
+  }
+}
+
+function render(p, container){
+  const sc = sevClass(p.severidad);
 
   let html = `
     <h2>Clasificación</h2>
     <div class="field">
-      <span class="badge ${sevClass}">${esc(p.severidad)}</span>
+      <span class="badge ${sc}">${esc(p.severidad)}</span>
       <span class="badge deseable" style="background:#556;">${esc(p.area_funcional)}</span>
     </div>
     <div class="field"><b>País:</b> ${esc(p.pais || "No especificado")}</div>
@@ -270,6 +462,7 @@ function render(p){
 
   if (p.bug_report){
     const b = p.bug_report;
+    const reportId = 'bug_' + Math.random().toString(36).slice(2,9);
     html += `
       <h2 style="margin-top:26px;">Bug report generado</h2>
       <table class="report">
@@ -283,6 +476,7 @@ function render(p){
       </table>
       <div class="field" style="margin-top:14px;"><b>Preguntas a soporte:</b></div>
       <ol class="questions">${(b.preguntas_soporte||[]).map(q=>`<li>${esc(q)}</li>`).join('')}</ol>
+      <button class="ghost" id="${reportId}" onclick='copiarTexto(${JSON.stringify(bugReportATexto(b))}, this)'>Copiar bug report</button>
     `;
   }
 
@@ -293,8 +487,195 @@ function render(p){
     `;
   }
 
-  result.innerHTML = html;
-  result.style.display = "block";
+  container.innerHTML = html;
+  container.style.display = "block";
+}
+
+// ---------- modo: lote (Excel) ----------
+
+let loteRows = []; // [{id, pais, calif, comentario}]
+
+document.getElementById('fileInput').addEventListener('change', async (e) => {
+  const file = e.target.files[0];
+  const preview = document.getElementById('previewLote');
+  const runBtn = document.getElementById('runLoteBtn');
+  const errorBox = document.getElementById('errorBoxLote');
+  errorBox.textContent = "";
+  loteRows = [];
+  runBtn.disabled = true;
+  preview.textContent = "";
+
+  if (!file) return;
+
+  try{
+    const buf = await file.arrayBuffer();
+    const wb = XLSX.read(buf, { type: 'array' });
+    const sheetName = wb.SheetNames.find(n => n.toLowerCase() !== 'léeme' && n.toLowerCase() !== 'leeme') || wb.SheetNames[0];
+    const sheet = wb.Sheets[sheetName];
+    const json = XLSX.utils.sheet_to_json(sheet, { defval: "" });
+
+    loteRows = json.map((row, idx) => {
+      const keys = Object.keys(row);
+      const find = (candidates) => {
+        const k = keys.find(k => candidates.some(c => k.toLowerCase().trim().startsWith(c)));
+        return k ? String(row[k]).trim() : "";
+      };
+      return {
+        id: find(["n°","n.","no","num","id"]) || String(idx + 1),
+        pais: find(["país","pais"]),
+        calif: find(["calif"]),
+        comentario: find(["coment","texto","mensaje"])
+      };
+    }).filter(r => r.comentario);
+
+    if (loteRows.length === 0){
+      errorBox.textContent = "No se encontró una columna 'Comentario' con datos, o el archivo está vacío.";
+      return;
+    }
+
+    preview.textContent = `${loteRows.length} comentario(s) detectado(s) y listo(s) para analizar.`;
+    runBtn.disabled = false;
+  }catch(err){
+    errorBox.textContent = "No se pudo leer el archivo: " + err.message;
+  }
+});
+
+async function analizarLote(){
+  const key = getKey();
+  const btn = document.getElementById('runLoteBtn');
+  const status = document.getElementById('statusLote');
+  const errorBox = document.getElementById('errorBoxLote');
+  const result = document.getElementById('resultLote');
+  const progressWrap = document.getElementById('progressWrap');
+  const progressBar = document.getElementById('progressBar');
+
+  errorBox.textContent = "";
+  result.style.display = "none";
+  result.innerHTML = "";
+
+  if (!key){ errorBox.textContent = "Falta la API key de Groq — verifica que el secret GROQ_API_KEY esté configurado y que el workflow se haya vuelto a desplegar."; return; }
+  if (!loteRows.length){ errorBox.textContent = "Sube un Excel con al menos un comentario."; return; }
+
+  btn.disabled = true;
+  progressWrap.style.display = "block";
+
+  const resultados = [];
+
+  for (let i = 0; i < loteRows.length; i++){
+    const row = loteRows[i];
+    status.textContent = `Procesando ${i + 1} de ${loteRows.length}...`;
+    progressBar.style.width = `${Math.round(((i) / loteRows.length) * 100)}%`;
+
+    const userMsg = `Fuente: No especificada\nPaís indicado por quien reporta (puede estar vacío): ${row.pais || "no indicado"}\n\nTexto tal cual llegó:\n"""${row.comentario}"""`;
+
+    try{
+      const parsed = await llamarGroq(key, SYSTEM_PROMPT, userMsg);
+      resultados.push({ id: row.id, comentario: row.comentario, pais: row.pais, ok: true, data: parsed });
+      registrarClasificacion(!!parsed.bug_report);
+    }catch(err){
+      resultados.push({ id: row.id, comentario: row.comentario, pais: row.pais, ok: false, error: err.message });
+    }
+
+    // pequeña pausa entre llamadas para no saturar el free tier de Groq
+    if (i < loteRows.length - 1) await new Promise(r => setTimeout(r, 350));
+  }
+
+  progressBar.style.width = "100%";
+  status.textContent = `Listo — ${resultados.filter(r=>r.ok).length} de ${resultados.length} clasificados sin error.`;
+  btn.disabled = false;
+
+  renderLote(resultados, result);
+}
+
+function renderLote(resultados, container){
+  // Agrupar por severidad x área, igual criterio que la tabla de la Parte 1
+  const grupos = {}; // key: "Severidad||Área" -> [ids]
+  const orden = ["Bloqueante", "Degradante", "Deseable"];
+
+  resultados.forEach(r => {
+    if (!r.ok) return;
+    const sev = r.data.severidad || "Sin clasificar";
+    const area = r.data.area_funcional || "Otra";
+    const key = sev + "||" + area;
+    if (!grupos[key]) grupos[key] = [];
+    grupos[key].push("#" + r.id);
+  });
+
+  const filas = Object.keys(grupos).sort((a, b) => {
+    const sevA = a.split("||")[0], sevB = b.split("||")[0];
+    const iA = orden.indexOf(sevA), iB = orden.indexOf(sevB);
+    return (iA === -1 ? 99 : iA) - (iB === -1 ? 99 : iB);
+  });
+
+  let html = `<h2>Tabla agregada — severidad × área funcional</h2>
+    <table class="agg"><tr><th>Severidad</th><th>Área funcional</th><th>Comentarios</th></tr>`;
+  filas.forEach(key => {
+    const [sev, area] = key.split("||");
+    html += `<tr class="sev-${sevClass(sev)}"><td><span class="badge ${sevClass(sev)}">${esc(sev)}</span></td><td>${esc(area)}</td><td>${grupos[key].join(", ")}</td></tr>`;
+  });
+  html += `</table>`;
+
+  const errores = resultados.filter(r => !r.ok);
+  if (errores.length){
+    html += `<div class="flag" style="margin-bottom:22px;"><b>${errores.length} comentario(s) no se pudieron clasificar:</b><br>` +
+      errores.map(r => `#${esc(r.id)} — ${esc(r.error)}`).join("<br>") + `</div>`;
+  }
+
+  html += `<h2>Detalle por comentario</h2>`;
+  resultados.forEach(r => {
+    if (!r.ok){
+      html += `<details class="item"><summary><span class="badge error">Error</span> #${esc(r.id)}
+        <div class="txt">${esc(r.comentario)}</div></summary>
+        <div class="field">${esc(r.error)}</div></details>`;
+      return;
+    }
+    const p = r.data;
+    const sc = sevClass(p.severidad);
+    let inner = `
+      <div class="field">
+        <span class="badge ${sc}">${esc(p.severidad)}</span>
+        <span class="badge deseable" style="background:#556;">${esc(p.area_funcional)}</span>
+      </div>
+      <div class="field"><b>País:</b> ${esc(p.pais || "No especificado")}</div>
+      <div class="field"><b>Por qué:</b> ${esc(p.razon_clasificacion)}</div>
+    `;
+    if (p.bug_report){
+      const b = p.bug_report;
+      inner += `
+        <table class="report" style="margin-top:10px;">
+          <tr><td>Título</td><td>${esc(b.titulo)}</td></tr>
+          <tr><td>Entorno</td><td>${esc(b.entorno)}</td></tr>
+          <tr><td>Pasos</td><td><ol class="questions">${(b.pasos_reproducir||[]).map(s=>`<li>${esc(s)}</li>`).join('')}</ol></td></tr>
+          <tr><td>Esperado</td><td>${esc(b.resultado_esperado)}</td></tr>
+          <tr><td>Actual</td><td>${esc(b.resultado_actual)}</td></tr>
+          <tr><td>Severidad bug</td><td>${esc(b.severidad_bug)} — ${esc(b.razon_severidad)}</td></tr>
+        </table>
+        <button class="ghost" onclick='copiarTexto(${JSON.stringify(bugReportATexto(b))}, this)'>Copiar bug report</button>
+      `;
+    }
+    if (p.relacion_embudo && p.relacion_embudo.aplica){
+      inner += `<div class="flag" style="margin-top:10px;">${esc(p.relacion_embudo.nota)}</div>`;
+    }
+    html += `<details class="item"><summary><span class="badge ${sc}">${esc(p.severidad)}</span> #${esc(r.id)} · ${esc(p.area_funcional)}
+      <div class="txt">${esc(r.comentario)}</div></summary>${inner}</details>`;
+  });
+
+  container.innerHTML = html;
+  container.style.display = "block";
+}
+
+function descargarPlantilla(){
+  const data = [
+    ["N°", "País", "Calificación", "Comentario"],
+    [1, "México", 2, "No me deja emitir la factura, dice error de RFC del receptor pero el RFC está bien. Perdí un cliente hoy."],
+    [2, "Colombia", 1, "Desde la última actualización la app se cierra sola cuando abro Reportes."],
+    [9, "Colombia", 1, "Actualicé y ya no me abre. Pantalla blanca."],
+  ];
+  const ws = XLSX.utils.aoa_to_sheet(data);
+  ws['!cols'] = [{wch:6},{wch:18},{wch:12},{wch:80}];
+  const wb = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb, ws, "Comentarios");
+  XLSX.writeFile(wb, "plantilla_fintra_lote.xlsx");
 }
 </script>
 </body>

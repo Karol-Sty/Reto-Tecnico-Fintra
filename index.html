@@ -130,16 +130,17 @@
   <div class="panel result" id="result"></div>
 
   <p class="note">
-    Herramienta construida para la Parte 4 del reto técnico de Alegra. Usa la API gratuita de Groq (modelo GPT-OSS 120B) a través de un proxy propio en Cloudflare Workers — la key de Groq vive solo del lado del servidor y nunca llega al navegador del visitante.
+    Herramienta construida para la Parte 4 del reto técnico de Alegra. Usa la API gratuita de Groq (modelo GPT-OSS 120B) llamada directamente desde el navegador — la key se inyecta al desplegar desde un secret de GitHub Actions, nunca queda escrita en el código fuente del repositorio.
   </p>
 
 </div>
 
 <script>
-// URL pública de tu Cloudflare Worker (no es secreta, es solo el endpoint del proxy).
-// Reemplaza esto por la URL real que te da Cloudflare al desplegar el Worker,
-// ej: "https://fintra-proxy.tuusuario.workers.dev"
-const PROXY_URL = "__WORKER_URL__";
+// En el repo esto queda literalmente como "__GROQ_KEY__".
+// El workflow de GitHub Actions lo reemplaza por el valor real del secret GROQ_API_KEY al desplegar.
+// El workflow de GitHub Actions reemplaza el texto entre comillas de la línea de abajo
+// por el valor real del secret GROQ_API_KEY al desplegar.
+const GROQ_KEY = "__GROQ_KEY__";
 
 const SYSTEM_PROMPT = `Eres el sistema de triage del "Buzón de Fintra", una app de facturación y contabilidad para pequeños negocios en México, Colombia, República Dominicana y España.
 
@@ -185,6 +186,8 @@ Responde SOLO con un objeto JSON válido, sin texto adicional, sin backticks, co
 }`;
 
 async function analizar(){
+  const key = (GROQ_KEY && GROQ_KEY !== "__GROQ_KEY__") ? GROQ_KEY : "";
+  const key = (GROQ_KEY && GROQ_KEY.startsWith("gsk_")) ? GROQ_KEY : "";
   const text = document.getElementById('input').value.trim();
   const fuente = document.getElementById('fuente').value;
   const pais = document.getElementById('pais').value.trim();
@@ -196,7 +199,7 @@ async function analizar(){
   errorBox.textContent = "";
   result.style.display = "none";
 
-  if (!PROXY_URL || PROXY_URL === "__WORKER_URL__"){ errorBox.textContent = "Falta configurar PROXY_URL con la URL de tu Cloudflare Worker."; return; }
+  if (!key){ errorBox.textContent = "Falta la API key de Groq — verifica que el secret GROQ_API_KEY esté configurado y que el workflow se haya vuelto a desplegar."; return; }
   if (!text){ errorBox.textContent = "Pega un comentario o mensaje primero."; return; }
 
   btn.disabled = true;
@@ -205,10 +208,11 @@ async function analizar(){
   const userMsg = `Fuente: ${fuente}\nPaís indicado por quien reporta (puede estar vacío): ${pais || "no indicado"}\n\nTexto tal cual llegó:\n"""${text}"""`;
 
   try{
-    const resp = await fetch(PROXY_URL, {
+    const resp = await fetch("https://api.groq.com/openai/v1/chat/completions", {
       method: "POST",
       headers: {
-        "Content-Type": "application/json"
+        "Content-Type": "application/json",
+        "Authorization": "Bearer " + key
       },
       body: JSON.stringify({
         model: "openai/gpt-oss-120b",
@@ -222,7 +226,7 @@ async function analizar(){
 
     if (!resp.ok){
       const errText = await resp.text();
-      throw new Error(`El proxy respondió ${resp.status}: ${errText.slice(0,200)}`);
+      throw new Error(`Groq respondió ${resp.status}: ${errText.slice(0,200)}`);
     }
 
     const data = await resp.json();

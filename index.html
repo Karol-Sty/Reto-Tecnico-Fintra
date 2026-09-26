@@ -136,8 +136,8 @@
 </div>
 
 <script>
-// En el repo esto queda literalmente como "__GROQ_KEY__".
-// El workflow de GitHub Actions lo reemplaza por el valor real del secret GROQ_API_KEY al desplegar.
+// El workflow de GitHub Actions reemplaza el texto entre comillas de la línea de abajo
+// por el valor real del secret GROQ_API_KEY al desplegar.
 const GROQ_KEY = "__GROQ_KEY__";
 
 const SYSTEM_PROMPT = `Eres el sistema de triage del "Buzón de Fintra", una app de facturación y contabilidad para pequeños negocios en México, Colombia, República Dominicana y España.
@@ -184,7 +184,7 @@ Responde SOLO con un objeto JSON válido, sin texto adicional, sin backticks, co
 }`;
 
 async function analizar(){
-  const key = (GROQ_KEY && GROQ_KEY !== "__GROQ_KEY__") ? GROQ_KEY : "";
+  const key = (GROQ_KEY && GROQ_KEY.startsWith("gsk_")) ? GROQ_KEY : "";
   const text = document.getElementById('input').value.trim();
   const fuente = document.getElementById('fuente').value;
   const pais = document.getElementById('pais').value.trim();

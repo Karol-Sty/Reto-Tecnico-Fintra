@@ -1,0 +1,327 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Buzón de Fintra — Triage automático</title>
+<style>
+  :root{
+    --ink:#1c2530;
+    --paper:#f6f4ef;
+    --card:#ffffff;
+    --line:#dcd6c8;
+    --accent:#2f6f5e;
+    --accent-ink:#0f2e26;
+    --bloqueante:#b3441e;
+    --degradante:#a3791f;
+    --deseable:#3c6e8f;
+    --muted:#6b6458;
+    font-family: 'Iowan Old Style', 'Palatino Linotype', Georgia, serif;
+  }
+  *{box-sizing:border-box;}
+  body{
+    margin:0; background:var(--paper); color:var(--ink);
+    padding: 40px 20px 80px;
+  }
+  .wrap{max-width:760px; margin:0 auto;}
+  header{margin-bottom:32px;}
+  .eyebrow{font-family: 'Courier New', monospace; font-size:13px; color:var(--muted); letter-spacing:0.02em;}
+  h1{
+    font-size:2.2rem; margin: 6px 0 8px; font-weight:600; line-height:1.15;
+  }
+  .sub{color:var(--muted); font-size:1.05rem; max-width:56ch; line-height:1.5;}
+
+  .panel{
+    background:var(--card); border:1px solid var(--line); border-radius:4px;
+    padding:24px; margin-bottom:20px;
+  }
+  label{display:block; font-size:0.9rem; color:var(--muted); margin-bottom:6px;}
+  textarea, input[type=text], input[type=password], select{
+    width:100%; font-family: inherit; font-size:1rem; padding:10px 12px;
+    border:1px solid var(--line); border-radius:3px; background:#fffdf9;
+    color:var(--ink);
+  }
+  textarea{min-height:110px; resize:vertical;}
+  .row{display:flex; gap:16px; flex-wrap:wrap; margin-top:14px;}
+  .row > div{flex:1; min-width:180px;}
+
+  button{
+    font-family: inherit; font-size:1rem; padding:11px 20px;
+    background:var(--accent); color:#fff; border:none; border-radius:3px;
+    cursor:pointer; margin-top:16px;
+  }
+  button:hover{background:var(--accent-ink);}
+  button:disabled{background:#a9a49a; cursor:default;}
+  button.ghost{
+    background:transparent; color:var(--accent-ink); border:1px solid var(--line);
+    padding:6px 12px; font-size:0.85rem; margin-top:0;
+  }
+
+  .keybar{
+    display:flex; align-items:center; gap:10px; font-size:0.85rem; color:var(--muted);
+    margin-bottom:18px; flex-wrap:wrap;
+  }
+  .keybar input{flex:1; min-width:220px;}
+
+  #status{font-size:0.9rem; color:var(--muted); margin-top:10px; min-height:1.2em;}
+
+  .result{display:none;}
+  .badge{
+    display:inline-block; padding:3px 10px; border-radius:999px; color:#fff;
+    font-size:0.8rem; font-family:'Courier New', monospace; margin-right:8px;
+  }
+  .badge.bloqueante{background:var(--bloqueante);}
+  .badge.degradante{background:var(--degradante);}
+  .badge.deseable{background:var(--deseable);}
+
+  h2{font-size:1.1rem; margin: 0 0 10px; border-bottom:1px solid var(--line); padding-bottom:8px;}
+  .field{margin-bottom:10px; font-size:0.97rem; line-height:1.5;}
+  .field b{color:var(--ink);}
+  table.report{width:100%; border-collapse:collapse; font-size:0.95rem;}
+  table.report td{padding:8px 10px; border-top:1px solid var(--line); vertical-align:top;}
+  table.report td:first-child{width:32%; color:var(--muted);}
+  ol.questions{margin:0; padding-left:20px;}
+  ol.questions li{margin-bottom:6px;}
+
+  .flag{
+    background:#fbf3e3; border:1px solid #e4cf9c; border-radius:3px;
+    padding:12px 14px; font-size:0.92rem; margin-top:6px; line-height:1.5;
+  }
+  .note{
+    font-size:0.85rem; color:var(--muted); margin-top:22px; line-height:1.6;
+  }
+  .error{color:var(--bloqueante); font-size:0.9rem; margin-top:10px;}
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <header>
+    <div class="eyebrow">Fintra · Sprint Product Top</div>
+    <h1>El buzón, ordenado solo</h1>
+    <p class="sub">Pega una reseña o un mensaje de soporte tal como llega. El sistema lo clasifica por severidad y área, y si es bloqueante arma el bug report completo — el mismo criterio de las Partes 1 y 2, sin que alguien tenga que hacerlo a mano cada vez.</p>
+  </header>
+
+  <div class="panel">
+    <div class="keybar">
+      <span>Groq API key:</span>
+      <input type="password" id="apiKey" placeholder="gsk_...">
+      <button class="ghost" onclick="saveKey()">Guardar en este navegador</button>
+    </div>
+
+    <label for="input">Comentario o mensaje de soporte, tal cual llegó</label>
+    <textarea id="input" placeholder="Ej: Cliente de México dice que no le deja emitir facturas desde el celular, le sale un error. Ya le pasó 3 veces...">Cliente de México dice que no le deja emitir facturas desde el celular, le sale un error. Ya le pasó 3 veces. Es urgente porque tiene que facturar hoy. Android creo. Le dije que reinstalara y sigue igual.</textarea>
+
+    <div class="row">
+      <div>
+        <label for="fuente">Fuente (opcional)</label>
+        <select id="fuente">
+          <option value="No especificada">No especificada</option>
+          <option value="Reseña de Google Play">Reseña de Google Play</option>
+          <option value="Ticket de soporte">Ticket de soporte</option>
+          <option value="Sesión con cliente">Sesión con cliente</option>
+        </select>
+      </div>
+      <div>
+        <label for="pais">País (si lo sabes)</label>
+        <input type="text" id="pais" placeholder="Ej: México">
+      </div>
+    </div>
+
+    <button id="runBtn" onclick="analizar()">Analizar</button>
+    <div id="status"></div>
+    <div id="errorBox" class="error"></div>
+  </div>
+
+  <div class="panel result" id="result"></div>
+
+  <p class="note">
+    Herramienta construida para la Parte 4 del reto técnico de Alegra. Usa la API gratuita de Groq (modelo Llama 3.3 70B) llamada directamente desde tu navegador — la key nunca se envía a ningún lado excepto a Groq, y solo vive en el almacenamiento local de este navegador.
+  </p>
+
+</div>
+
+<script>
+const STORAGE_KEY = "fintra_groq_key";
+// En el repo esto queda literalmente como "__GROQ_KEY__".
+// El workflow de GitHub Actions lo reemplaza por el valor real del secret GROQ_API_KEY al desplegar.
+const GROQ_KEY = "__GROQ_KEY__";
+
+window.onload = () => {
+  if (GROQ_KEY && GROQ_KEY !== "__GROQ_KEY__"){
+    // La página ya viene con la key inyectada por el deploy: la precargamos.
+    document.getElementById('apiKey').value = GROQ_KEY;
+    return;
+  }
+  const saved = localStorage.getItem(STORAGE_KEY);
+  if (saved) document.getElementById('apiKey').value = saved;
+};
+
+function saveKey(){
+  const k = document.getElementById('apiKey').value.trim();
+  if (!k){ alert("Pega tu API key de Groq primero."); return; }
+  localStorage.setItem(STORAGE_KEY, k);
+  const s = document.getElementById('status');
+  s.textContent = "Key guardada en este navegador.";
+  setTimeout(()=> s.textContent = "", 2000);
+}
+
+const SYSTEM_PROMPT = `Eres el sistema de triage del "Buzón de Fintra", una app de facturación y contabilidad para pequeños negocios en México, Colombia, República Dominicana y España.
+
+Tu trabajo es clasificar un comentario de usuario o mensaje de soporte, tal como llega, sin editar el texto original, siguiendo EXACTAMENTE este criterio:
+
+SEVERIDAD (elige una):
+- "Bloqueante": impide usar la app o una función central (no se puede facturar, no se puede abrir la app, se cierra sola).
+- "Degradante": la función funciona pero de forma lenta, confusa o incómoda.
+- "Deseable": una mejora o funcionalidad nueva que no impide usar nada.
+
+ÁREA FUNCIONAL (elige la que mejor aplique): "Emisión de factura", "Reportes", "Captura de gastos / OCR", "Apertura de la app", "Cotizaciones", "Gestión de clientes", "Acceso / Perfil", "Otra".
+
+Si detectas país en el texto, inclúyelo. Si no es explícito, usa "No especificado" salvo que el usuario te lo indique aparte.
+
+Si la severidad es "Bloqueante", genera ADEMÁS un bug report completo con este formato (igual al que usaría un PM real):
+- titulo: breve, en formato [Plataforma][País] Descripción — recurrente si aplica
+- entorno: país, plataforma (marca si es un dato confirmado o un supuesto), versión de la app si se menciona
+- pasos_reproducir: lista de pasos reconstruidos razonablemente del texto (acláralo si son inferidos)
+- resultado_esperado: una frase
+- resultado_actual: una frase
+- pais_afectado: string
+- severidad_bug: "Alta", "Media" o "Baja", con una razón breve
+- preguntas_soporte: lista de máximo 5 preguntas concretas para completar el reporte
+
+Si el texto es de México Y menciona facturación, RFC, timbrado o SAT, agrega el campo "relacion_embudo" con:
+- aplica: true
+- nota: una frase que conecte esto con una posible caída de conversión en el embudo de emisión de factura en México, aclarando que es una hipótesis a validar contra logs, no una conclusión.
+Si no aplica, pon "aplica": false y omite "nota".
+
+Responde SOLO con un objeto JSON válido, sin texto adicional, sin backticks, con esta forma exacta:
+{
+  "severidad": "...",
+  "area_funcional": "...",
+  "pais": "...",
+  "razon_clasificacion": "...",
+  "bug_report": null o {
+    "titulo": "...", "entorno": "...", "pasos_reproducir": ["..."],
+    "resultado_esperado": "...", "resultado_actual": "...",
+    "pais_afectado": "...", "severidad_bug": "...", "razon_severidad": "...",
+    "preguntas_soporte": ["..."]
+  },
+  "relacion_embudo": { "aplica": true/false, "nota": "..." (si aplica) }
+}`;
+
+async function analizar(){
+  const key = document.getElementById('apiKey').value.trim();
+  const text = document.getElementById('input').value.trim();
+  const fuente = document.getElementById('fuente').value;
+  const pais = document.getElementById('pais').value.trim();
+  const btn = document.getElementById('runBtn');
+  const status = document.getElementById('status');
+  const errorBox = document.getElementById('errorBox');
+  const result = document.getElementById('result');
+
+  errorBox.textContent = "";
+  result.style.display = "none";
+
+  if (!key){ errorBox.textContent = "Falta tu API key de Groq (arriba, a la derecha)."; return; }
+  if (!text){ errorBox.textContent = "Pega un comentario o mensaje primero."; return; }
+
+  btn.disabled = true;
+  status.textContent = "Clasificando y armando el reporte...";
+
+  const userMsg = `Fuente: ${fuente}\nPaís indicado por quien reporta (puede estar vacío): ${pais || "no indicado"}\n\nTexto tal cual llegó:\n"""${text}"""`;
+
+  try{
+    const resp = await fetch("https://api.groq.com/openai/v1/chat/completions", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "Authorization": "Bearer " + key
+      },
+      body: JSON.stringify({
+        model: "llama-3.3-70b-versatile",
+        temperature: 0.2,
+        messages: [
+          { role: "system", content: SYSTEM_PROMPT },
+          { role: "user", content: userMsg }
+        ]
+      })
+    });
+
+    if (!resp.ok){
+      const errText = await resp.text();
+      throw new Error(`Groq respondió ${resp.status}: ${errText.slice(0,200)}`);
+    }
+
+    const data = await resp.json();
+    let raw = data.choices?.[0]?.message?.content || "";
+    raw = raw.trim().replace(/^```json/i, "").replace(/^```/, "").replace(/```$/, "").trim();
+
+    let parsed;
+    try{
+      parsed = JSON.parse(raw);
+    }catch(e){
+      throw new Error("El modelo no devolvió JSON válido. Respuesta cruda: " + raw.slice(0,300));
+    }
+
+    render(parsed);
+    status.textContent = "Listo.";
+  }catch(err){
+    errorBox.textContent = "Error: " + err.message;
+    status.textContent = "";
+  }finally{
+    btn.disabled = false;
+  }
+}
+
+function esc(s){
+  const d = document.createElement('div');
+  d.textContent = s ?? "";
+  return d.innerHTML;
+}
+
+function render(p){
+  const result = document.getElementById('result');
+  const sevClass = (p.severidad || "").toLowerCase().includes("bloq") ? "bloqueante"
+                  : (p.severidad || "").toLowerCase().includes("degra") ? "degradante" : "deseable";
+
+  let html = `
+    <h2>Clasificación</h2>
+    <div class="field">
+      <span class="badge ${sevClass}">${esc(p.severidad)}</span>
+      <span class="badge deseable" style="background:#556;">${esc(p.area_funcional)}</span>
+    </div>
+    <div class="field"><b>País:</b> ${esc(p.pais || "No especificado")}</div>
+    <div class="field"><b>Por qué:</b> ${esc(p.razon_clasificacion)}</div>
+  `;
+
+  if (p.bug_report){
+    const b = p.bug_report;
+    html += `
+      <h2 style="margin-top:26px;">Bug report generado</h2>
+      <table class="report">
+        <tr><td>Título</td><td>${esc(b.titulo)}</td></tr>
+        <tr><td>Entorno</td><td>${esc(b.entorno)}</td></tr>
+        <tr><td>Pasos para reproducir</td><td><ol class="questions">${(b.pasos_reproducir||[]).map(s=>`<li>${esc(s)}</li>`).join('')}</ol></td></tr>
+        <tr><td>Resultado esperado</td><td>${esc(b.resultado_esperado)}</td></tr>
+        <tr><td>Resultado actual</td><td>${esc(b.resultado_actual)}</td></tr>
+        <tr><td>País / a quién afecta</td><td>${esc(b.pais_afectado)}</td></tr>
+        <tr><td>Severidad</td><td>${esc(b.severidad_bug)} — ${esc(b.razon_severidad)}</td></tr>
+      </table>
+      <div class="field" style="margin-top:14px;"><b>Preguntas a soporte:</b></div>
+      <ol class="questions">${(b.preguntas_soporte||[]).map(q=>`<li>${esc(q)}</li>`).join('')}</ol>
+    `;
+  }
+
+  if (p.relacion_embudo && p.relacion_embudo.aplica){
+    html += `
+      <h2 style="margin-top:26px;">Posible relación con el embudo</h2>
+      <div class="flag">${esc(p.relacion_embudo.nota)}</div>
+    `;
+  }
+
+  result.innerHTML = html;
+  result.style.display = "block";
+}
+</script>
+</body>
+</html>
